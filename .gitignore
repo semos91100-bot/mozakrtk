@@ -1,0 +1,6 @@
+# Private server configuration
+/api/config.php
+/admin/admin_config.php
+
+# Runtime data (users, sessions, support, notifications, etc.)
+/api/storage/*.json
