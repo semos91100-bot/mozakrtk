@@ -3,8 +3,5 @@
     "api/vercel.js": {
       "runtime": "nodejs20.x"
     }
-  },
-  "rewrites": [
-    { "source": "/api", "destination": "/api/vercel.js" }
-  ]
+  }
 }
