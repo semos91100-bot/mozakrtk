@@ -1,0 +1,6 @@
+# Local/editor files
+.DS_Store
+.vscode/
+
+# Legacy PHP storage (kept only as backup)
+/legacy_php_backup/api/storage/*.json
