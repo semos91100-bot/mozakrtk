@@ -67,6 +67,86 @@ const CUR = {
   ]}
 };
 
+
+/* ============================================================
+   المواد حسب المرحلة والشعبة — نظام الثانوية 2025/2026
+   المصدر المرجعي: قرارات ونماذج وزارة التربية والتعليم.
+   المواد الجديدة التي لا يوجد لها محتوى تفصيلي داخل هذا المشروع
+   تظهر كمسار مستقل ويمكن ملؤها لاحقًا من ملف البيانات نفسه.
+   ============================================================ */
+const EDU_SUBJECTS = {
+  first: {
+    general: {
+      core:["ar","en","history","math","integrated_science","phil"],
+      pass:["second_lang","religion","pe","programming"]
+    }
+  },
+  second: {
+    science: {
+      core:["ar","en","math","history","km","fz"],
+      pass:["second_lang","religion","pe","national_ed"]
+    },
+    literary: {
+      core:["ar","en","history","geo","psych","math"],
+      pass:["second_lang","religion","pe","national_ed"]
+    }
+  },
+  third: {
+    science_biology: {
+      core:["ar","en","km","fz","ah"],
+      pass:[]
+    },
+    science_math: {
+      core:["ar","en","km","fz","pure_math","applied_math"],
+      pass:[]
+    },
+    literary: {
+      core:["ar","en","history","geo","statistics"],
+      pass:[]
+    }
+  }
+};
+
+const EXTRA_SUBJECTS = {
+  history:{name:"التاريخ",emoji:"🏛️",c:"var(--history)",units:[]},
+  math:{name:"الرياضيات",emoji:"📐",c:"var(--math)",units:[]},
+  integrated_science:{name:"العلوم المتكاملة",emoji:"🔬",c:"var(--science)",units:[]},
+  phil:{name:"الفلسفة والمنطق",emoji:"🧠",c:"var(--phil)",units:[]},
+  second_lang:{name:"اللغة الأجنبية الثانية",emoji:"🌍",c:"var(--en2)",units:[]},
+  religion:{name:"التربية الدينية",emoji:"🕊️",c:"var(--religion)",units:[]},
+  pe:{name:"التربية البدنية والصحية",emoji:"🏃",c:"var(--pe)",units:[]},
+  programming:{name:"البرمجة والذكاء الاصطناعي",emoji:"💻",c:"var(--programming)",units:[]},
+  national_ed:{name:"التربية الوطنية",emoji:"🇪🇬",c:"var(--national)",units:[]},
+  geo:{name:"الجغرافيا",emoji:"🗺️",c:"var(--geo)",units:[]},
+  psych:{name:"علم النفس",emoji:"🧠",c:"var(--psych)",units:[]},
+  statistics:{name:"الإحصاء",emoji:"📊",c:"var(--statistics)",units:[]},
+  pure_math:{name:"الرياضيات البحتة",emoji:"∑",c:"var(--puremath)",units:[]},
+  applied_math:{name:"الرياضيات التطبيقية",emoji:"⚙️",c:"var(--appliedmath)",units:[]}
+};
+
+function makePlaceholderUnits(subjectName, count=4){
+  return Array.from({length:count},(_,i)=>({n:`الوحدة ${i+1}`,l:[`محتوى ${subjectName} — الجزء ${i+1}`]}));
+}
+Object.entries(EXTRA_SUBJECTS).forEach(([id,meta])=>{
+  if(!CUR[id]) CUR[id]={...meta,units:meta.units.length?meta.units:makePlaceholderUnits(meta.name)};
+});
+
+function educationSubjectIds(grade=S?.grade, branch=S?.branch){
+  const g=EDU_SUBJECTS[grade]||EDU_SUBJECTS.third;
+  const tr=g?.[branch]||g?.general||Object.values(g||{})[0];
+  return [...new Set([...(tr?.core||[]),...(tr?.pass||[])])];
+}
+function educationSubjects(grade=S?.grade, branch=S?.branch){ return educationSubjectIds(grade,branch).map(id=>CUR[id]).filter(Boolean); }
+function educationCoreSubjectIds(grade=S?.grade, branch=S?.branch){
+  const g=EDU_SUBJECTS[grade]||EDU_SUBJECTS.third; const tr=g?.[branch]||g?.general||Object.values(g||{})[0];
+  return [...(tr?.core||[])];
+}
+function educationPassSubjectIds(grade=S?.grade, branch=S?.branch){
+  const g=EDU_SUBJECTS[grade]||EDU_SUBJECTS.third; const tr=g?.[branch]||g?.general||Object.values(g||{})[0];
+  return [...(tr?.pass||[])];
+}
+function contentReadyForSubject(sid){ return Array.isArray(CUR[sid]?.units) && CUR[sid].units.length>0 && !EXTRA_SUBJECTS[sid]; }
+
 /* محتوى مفصّل لدروس مختارة (البقية تُضاف هنا) */
 const CONTENT = {
  "fz-1-3":{summary:"قانون أوم بيربط بين فرق الجهد بين طرفي موصل وشدة التيار المار فيه عند ثبوت درجة الحرارة. العلاقة بينهما علاقة طردية، وثابت التناسب هو المقاومة.",
@@ -198,7 +278,7 @@ const TEACHERS = [
  /* ---------- اللغة الإنجليزية ---------- */
  {n:"Mr. Ahmed Fathy",s:"en",links:[]},
  {n:"Mr. Osama Mahmoud",s:"en",links:[]}
-].map((t,i)=>({id:"t"+(i+1),lectures:[],notes:[],links:[],...t}));
+].map((t,i)=>({id:"t"+(i+1),lectures:[],notes:[],links:[],grades:["first","second","third"],branches:["general","science","literary","science_biology","science_math"],...t}));
 
 /* بنك الأسئلة الأساسي */
 const QBANK = [

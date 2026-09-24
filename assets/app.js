@@ -186,6 +186,8 @@ function renderAuth(message=""){
     ${message?`<div class="card" style="margin-bottom:10px;border-color:var(--bad);color:var(--bad)">${esc(message)}</div>`:""}
     ${!staff&&mode==="signup"?`<label class="field"><span>الاسم</span><input id="auth_name" autocomplete="name" placeholder="اسمك"></label>`:""}
     ${!staff&&mode==="signup"?`<label class="field"><span>رقم الموبايل</span><input id="auth_phone" inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx"></label>`:""}
+    ${!staff&&mode==="signup"?`<label class="field"><span>الصف الدراسي</span><select id="auth_grade">${educationGradeOptions(S.grade)}</select></label>`:""}
+    ${!staff&&mode==="signup"?`<label class="field"><span>الشعبة</span><select id="auth_branch">${educationBranchOptions(S.grade,S.branch)}</select></label>`:""}
 
     ${staff?`<label class="field"><span>البريد الإلكتروني</span><input id="auth_email" type="email" autocomplete="username" placeholder="admin@example.com"></label>`:""}
     ${!staff&&mode==="login"?`<label class="field"><span>رقم الموبايل</span><input id="auth_phone" inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx"></label>`:""}
@@ -472,9 +474,9 @@ document.addEventListener('input',e=>{
 document.addEventListener('click',e=>{ const b=e.target.closest('[data-act="setrolephone"],[data-act="setuseremail"]'); if(!b||AUTH.user?.role!=='owner') return; (async()=>{ if(b.dataset.act==='setrolephone'){const phone=$("#role_phone")?.value.trim()||'';const role=$("#role_value")?.value||'student';if(!phone){toast('اكتب رقم الموبايل');return;}const d=await apiJSON('user_role',{method:'POST',body:JSON.stringify({phone,role})});toast(d.ok?'تم تعيين الرتبة':authMessage(d.error));if(d.ok){await fetchUsers();render();}}else{const phone=$("#email_phone")?.value.trim()||'';const email=$("#user_email")?.value.trim()||'';if(!phone||!email){toast('اكتب رقم الموبايل والبريد');return;}const d=await apiJSON('user_email',{method:'POST',body:JSON.stringify({phone,email})});toast(d.ok?'تم حفظ البريد الإلكتروني':authMessage(d.error));if(d.ok){await fetchUsers();render();}}})();});
 
 document.addEventListener("change",e=>{
-  const grade=e.target.closest("#p_grade,#o_grade");
+  const grade=e.target.closest("#p_grade,#o_grade,#auth_grade");
   if(grade){
-    const branchId=grade.id==="p_grade"?"#p_branch":"#o_branch";
+    const branchId=grade.id==="p_grade"?"#p_branch":grade.id==="o_grade"?"#o_branch":"#auth_branch";
     const b=$(branchId);
     if(b) b.innerHTML=educationBranchOptions(grade.value, null);
     return;
@@ -519,7 +521,7 @@ document.addEventListener("click",e=>{
   const submit=e.target.closest("[data-auth-submit]");
   if(submit){
     const mode=submit.dataset.authSubmit, kind=window.__authKind||"student", pass=$("#auth_password")?.value||"";
-    if(mode==="signup") signupAccount($("#auth_name")?.value.trim()||"",$("#auth_phone")?.value.trim()||"",pass);
+    if(mode==="signup") signupAccount($("#auth_name")?.value.trim()||"",$("#auth_phone")?.value.trim()||"",pass,"",$("#auth_grade")?.value||S.grade,$("#auth_branch")?.value||S.branch);
     else loginAccount(kind==="staff"?$("#auth_email")?.value.trim():$("#auth_phone")?.value.trim(),pass,kind);
   }
 });

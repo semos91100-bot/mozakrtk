@@ -169,15 +169,17 @@ async function loginAccount(identifier,password,kind="student"){
   await fetchNotifications(); await refreshSharedData();
   startAuditPolling();
 }
-async function signupAccount(name,phone,password,emailValue=""){
+async function signupAccount(name,phone,password,emailValue="",grade=DEFAULT_EDUCATION.grade,branch=DEFAULT_EDUCATION.branch){
   phone=(phone||"").trim(); password=password||""; emailValue=(emailValue||"").trim().toLowerCase();
+  grade=EDU.grades[grade]?grade:DEFAULT_EDUCATION.grade;
+  branch=EDU.grades[grade]?.branches?.some(b=>b.id===branch)?branch:(EDU.grades[grade]?.branches?.[0]?.id||DEFAULT_EDUCATION.branch);
   if(!name) { renderAuth("اكتب اسمك."); return; }
   if(!phone) { renderAuth("اكتب رقم الموبايل."); return; }
   if(!password) { renderAuth("اكتب كلمة المرور."); return; }
   AUTH.busy=true; renderAuth();
-  const d=await apiJSON("signup",{method:"POST",body:JSON.stringify({name,phone,password,email:emailValue})});
+  const d=await apiJSON("signup",{method:"POST",body:JSON.stringify({name,phone,password,email:emailValue,grade,branch})});
   if(!d.ok){ AUTH.busy=false; renderAuth(authMessage(d.error)); return; }
-  AUTH.user=d.user; S.name=name.trim()||S.name; S.updated=Date.now();
+  AUTH.user=d.user; S.name=name.trim()||S.name; S.grade=grade; S.branch=branch; S.onboarded=true; S.updated=Date.now();
   await apiJSON("state",{method:"POST",body:JSON.stringify({state:S})});
   AUTH.busy=false; window.__authMode="login"; window.__authKind="student";
   $("#authLayer").innerHTML=""; syncAuthButton(); location.hash="#/dash"; render();
@@ -227,16 +229,17 @@ function teachers(){
   const m=new Map();
   TEACHERS.filter(t=>!removed.has(t.id)).forEach(t=>m.set(t.id,t));
   (SITECONTENT.teachers||[]).forEach(t=>m.set(t.id,t));
-  return [...m.values()];
+  const ids=new Set(educationSubjectIds());
+  return [...m.values()].filter(t=>ids.has(t.s));
 }
-function questions(){ return QBANK.concat((S.custom.questions||[])); }
+function questions(){ const ids=new Set(educationSubjectIds()); return QBANK.concat((S.custom.questions||[])).filter(q=>ids.has(q.s)); }
 function lessonsOf(sid){
   const out=[]; const sub=CUR[sid]; if(!sub) return out;
   sub.units.forEach((u,ui)=>u.l.forEach((t,li)=>out.push({id:`${sid}-${ui+1}-${li+1}`,title:t,unit:u.n,ui:ui+1,li:li+1,sid})));
   (S.custom.lessons||[]).filter(x=>x.sid===sid).forEach(x=>out.push(x));
   return out;
 }
-function allLessons(){ return Object.keys(CUR).flatMap(lessonsOf); }
+function allLessons(){ return educationSubjectIds().flatMap(lessonsOf); }
 function lessonById(id){ return allLessons().find(l=>l.id===id); }
 function contentOf(id){
   const c=(S.custom.lessons||[]).find(l=>l.id===id&&l.summary);
@@ -284,7 +287,7 @@ function checkBadges(){
   if(S.streak>=7) add("streak7");
   if(S.attempts.length>=100) add("q100");
   if(totalMinutes()>=600) add("hours10");
-  Object.keys(CUR).forEach(sid=>{
+  educationSubjectIds().forEach(sid=>{
     CUR[sid].units.forEach((u,ui)=>{ if(u.l.every((_,li)=>S.done[`${sid}-${ui+1}-${li+1}`])) add("unit1"); });
   });
   if(overall().total&&overall().done===overall().total) add("finish");
@@ -297,7 +300,7 @@ function saveLocal0(){ try{ localStorage.setItem(LS,JSON.stringify(S)); }catch(e
    ============================================================ */
 function buildSchedule(){
   const goal=S.dailyGoal||120;
-  const subs=Object.keys(CUR);
+  const subs=educationSubjectIds();
   const w={};
   subs.forEach(s=>{
     let weight=1;

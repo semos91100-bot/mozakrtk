@@ -202,6 +202,9 @@ async function handler(req,res){
     }
     if(action==='signup' && method==='POST'){
       const p=normalizePhone(body.phone), pass=String(body.password||''), name=String(body.name||'').trim().slice(0,120), e=email(body.email);
+      const grade=EDU_GRADES_SERVER[String(body.grade||'')] ? String(body.grade) : 'third';
+      const validBranches=EDU_GRADES_SERVER[grade]?.branches||[];
+      const branch=validBranches.some(x=>x.id===String(body.branch||'')) ? String(body.branch) : (validBranches[0]?.id||'science_biology');
       if(!validPhone(p)) return fail(res,422,'INVALID_PHONE');
       if(pass.length<8) return fail(res,422,'PASSWORD_SHORT');
       if(pass.length>200) return fail(res,422,'PASSWORD_LONG');
@@ -209,7 +212,7 @@ async function handler(req,res){
       if(!validEmail(e)) return fail(res,422,'INVALID_EMAIL');
       const byPhone=await getStudentByPhone(p); if(byPhone) return fail(res,409,'PHONE_EXISTS');
       if(e){ const byEmail=await getStudentByEmail(e); if(byEmail || e===OWNER_EMAIL) return fail(res,409,'EMAIL_EXISTS'); }
-      const inserted=await sb('users',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({email:null,phone:p,name:name||'طالب',role:'student',password_hash:hashPassword(pass),state:{},created_at:now(),updated_at:now()})});
+      const inserted=await sb('users',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({email:null,phone:p,name:name||'طالب',role:'student',password_hash:hashPassword(pass),state:{name:name||'طالب',grade,branch,onboarded:true},created_at:now(),updated_at:now()})});
       const u=inserted[0], safe=safeUser(u); setSession(res,safe); await audit(safe,'signup',{role:'student'}); return ok(res,{authenticated:true,user:safe});
     }
     if(action==='logout' && method==='POST'){ const u=sessionUser(req); if(u) await audit(u,'logout'); clearSession(res); return ok(res); }

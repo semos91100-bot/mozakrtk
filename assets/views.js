@@ -59,7 +59,7 @@ function vDash(){
     </div>
     <div class="card">
       <h2 style="margin-bottom:10px">تقدّمك في المواد</h2>
-      ${Object.keys(CUR).map(sid=>{const p=progress(sid);return `
+      ${educationSubjectIds().map(sid=>{const p=progress(sid);return `
         <a class="item subjcard" style="--c:${SUB(sid).c}" href="#/subject/${sid}">
           <div class="ico">${SUB(sid).emoji}</div>
           <div class="gr"><b>${SUB(sid).name}</b><div class="bar" style="margin-top:5px"><i style="width:${p.pct}%;background:${SUB(sid).c}"></i></div></div>
@@ -92,7 +92,7 @@ function vSchedule(){
       <label class="field"><span>تاريخ أول امتحان</span><input type="date" id="f_exam" value="${S.examDate}"></label>
     </div>
     <div class="field"><span>المواد اللي حاسس إنك ضعيف فيها</span>
-      <div class="row">${Object.keys(CUR).map(s=>`<button class="chip ${S.weak.includes(s)?"on":""}" data-act="weak" data-s="${s}">${SUB(s).emoji} ${SUB(s).name}</button>`).join("")}</div>
+      <div class="row">${educationSubjectIds().map(s=>`<button class="chip ${S.weak.includes(s)?"on":""}" data-act="weak" data-s="${s}">${SUB(s).emoji} ${SUB(s).name}</button>`).join("")}</div>
     </div>
     <button class="btn primary" data-act="savesched">حفظ وإعادة بناء الجدول</button>
   </div>`;
@@ -101,7 +101,7 @@ function vSchedule(){
 /* ---------- المواد ---------- */
 function vSubjects(){
   return `<h1 style="margin-bottom:14px">المواد</h1>
-  <div class="grid g2">${Object.keys(CUR).map(sid=>{const p=progress(sid);const acc=accuracy(a=>a.s===sid);return `
+  <div class="grid g2">${educationSubjectIds().map(sid=>{const p=progress(sid);const acc=accuracy(a=>a.s===sid);return `
     <a class="card subjcard" style="--c:${SUB(sid).c};text-decoration:none" href="#/subject/${sid}">
       <div class="between"><h2>${SUB(sid).emoji} ${SUB(sid).name}</h2><span class="sm muted">${CUR[sid].units.length} أبواب</span></div>
       <div class="bar" style="margin:10px 0 6px"><i style="width:${p.pct}%;background:${SUB(sid).c}"></i></div>
@@ -111,7 +111,9 @@ function vSubjects(){
 function vSubject(sid){
   const s=SUB(sid); if(!s) return vNotFound();
   const p=progress(sid);
+  const ready=contentReadyForSubject(sid);
   return `
+  ${!ready?`<div class="card" style="margin-bottom:14px;border-color:var(--amber)"><b>📚 منهج ${esc(s.name)} لمسارك</b><p class="sm muted" style="margin-top:5px">المادة اتضافت تلقائيًا حسب ${esc(educationLabel())}. المحتوى التفصيلي لهذه المادة لسه قيد الإضافة، ولن يتم عرض محتوى من شعبة أخرى بالخطأ.</p></div>`:""}
   <div class="between" style="margin-bottom:14px">
     <div><h1>${s.emoji} ${s.name}</h1><p class="muted sm">${p.done} من ${p.total} درس · ${p.pct}%</p></div>
     <a class="btn" href="#/bank?s=${sid}">أسئلة على المادة</a>
@@ -180,7 +182,7 @@ function linksLabel(n){ return n===0?"الروابط قريبًا":n===1?"راب
 function vTeachers(){
   return `<h1>المدرسين</h1>
   <p class="muted sm" style="margin-bottom:14px">مفيش ترتيب من الأفضل للأسوأ — اختار اللي يناسبك وحطّه في حسابك.</p>
-  ${Object.keys(CUR).map(sid=>{
+  ${educationSubjectIds().map(sid=>{
     const t=teachers().filter(x=>x.s===sid);
     return `<h2 style="margin:16px 0 8px">${SUB(sid).emoji} ${SUB(sid).name}</h2>
     <div class="grid g3">${t.map(x=>`
@@ -256,7 +258,7 @@ function vExams(){
   <p class="muted sm" style="margin-bottom:14px">امتحان على باب، أو على مادة كاملة، أو امتحان محاكاة على كل المواد.</p>
   <div class="grid g2">
     <div class="card"><h2>امتحان على مادة</h2>
-      <label class="field" style="margin-top:8px"><span>المادة</span><select id="e_s">${Object.keys(CUR).map(x=>`<option value="${x}">${SUB(x).emoji} ${SUB(x).name}</option>`).join("")}</select></label>
+      <label class="field" style="margin-top:8px"><span>المادة</span><select id="e_s">${educationSubjectIds().map(x=>`<option value="${x}">${SUB(x).emoji} ${SUB(x).name}</option>`).join("")}</select></label>
       <label class="field"><span>عدد الأسئلة</span><input type="number" id="e_n" value="15" min="5" max="40"></label>
       <button class="btn primary" data-act="quiz" data-mode="subject">ابدأ الامتحان</button>
     </div>
