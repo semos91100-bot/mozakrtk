@@ -47,9 +47,10 @@ async function apiJSON(action,opts={}){
       let d=null; try{d=await r.json();}catch(e){d={ok:false,error:"BAD_RESPONSE"};}
       if(!r.ok && !d.error) d.error="REQUEST_FAILED";
       d.httpStatus=r.status;
-      // في حالة عدم إعداد قاعدة البيانات على Vercel لا نرجع للتخزين المحلي بصمت؛
-      // عشان المشكلة تبان بوضوح بدل ما كل جهاز يبقى له نسخة منفصلة.
-      if(d.error !== "BACKEND_NOT_CONFIGURED" || location.hostname !== "localhost") return d;
+      // لو قاعدة البيانات المشتركة لسه مش مضافة على Vercel، استخدم الـLocal API
+      // كخطة احتياطية حتى يفضل تسجيل الدخول والموقع شغالين. عند تفعيل Supabase
+      // سيتم استخدام الـAPI المشترك تلقائيًا وتظهر التذاكر والإشعارات بين الأجهزة.
+      if(d.error !== "BACKEND_NOT_CONFIGURED" && d.error !== "NETWORK_ERROR") return d;
     }
   }catch(e){
     if(remoteAllowed && location.hostname !== "localhost") return {ok:false,error:"NETWORK_ERROR"};
