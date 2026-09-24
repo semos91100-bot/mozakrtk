@@ -413,6 +413,7 @@ function vAdmin(){
   </div>`:''}
 
   ${AUTH.user.role==='owner'?`<h2 style="margin-bottom:10px">👑 لوحة الـ OWNER — تحكم كامل</h2>
+  <div class="card" style="margin-bottom:16px"><div class="between"><div><b>🔐 حالة قاعدة البيانات وتسجيل الدخول</b><div class="sm muted" style="margin-top:4px">فحص مباشر من السيرفر قبل استخدام لوحة الحسابات.</div></div><span class="chip ${HEALTH.loading?'':'on'}">${HEALTH.loading?'جاري الفحص…':HEALTH.ok?'متصلة ✅':`غير متصلة: ${esc(authMessage(HEALTH.error))}`}</span></div><button class="btn sm" data-act="refreshhealth" style="margin-top:10px">🔄 فحص الاتصال</button></div>
   <div class="grid g4" style="margin-bottom:16px">
     <div class="card"><div class="xs muted">كل الحسابات</div><div style="font-size:28px;font-weight:800;margin-top:4px">${USERS.length}</div></div>
     <div class="card"><div class="xs muted">طلاب</div><div style="font-size:28px;font-weight:800;margin-top:4px">${USERS.filter(u=>u.role==='student').length}</div></div>

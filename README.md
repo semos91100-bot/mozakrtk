@@ -63,3 +63,14 @@ The internal `#/admin-chat` is available to OWNER and all staff roles. Students 
 
 ### إصلاح التسجيل
 تم إصلاح خطأ كان يجعل إنشاء الحساب يرجع "حدث خطأ. جرّب تاني" على Vercel: الـAPI كان يستخدم تعريفًا غير موجود لمراحل وشعب الثانوية (`EDU_GRADES_SERVER`). أضيف التعريف على السيرفر، مع تحويل أخطاء التكرار المعروفة إلى رسائل مفهومة.
+
+
+## Final hardening pass — 2026-09-24
+- Login supports phone, email, and username for student accounts.
+- Egyptian phone lookup is backward-compatible with common legacy formats (01…, 20…, +20…).
+- Email/username lookup is case-insensitive with exact-first lookup.
+- Authentication errors now expose actionable Supabase/Vercel configuration messages.
+- Session cookie security adapts to HTTPS on Vercel and remains testable over local HTTP.
+- Login/signup forms retain the entered identifier/name/username/phone when validation fails.
+- Added an OWNER-only backend health check and a live database-status card in the OWNER panel.
+- Client API option merging was hardened so request headers are not accidentally dropped.

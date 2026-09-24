@@ -177,9 +177,10 @@ function renderAuth(message=""){
   const kind=window.__authKind||"student";
   const staff=kind==="staff";
   const loginMethod=window.__loginMethod||"phone";
-  const identifierLabel=loginMethod==="email"?"البريد الإلكتروني":"رقم الموبايل";
-  const identifierPlaceholder=loginMethod==="email"?"name@example.com":"01xxxxxxxxx";
-  const identifierAttrs=loginMethod==="email"?'type="email"':'inputmode="tel"';
+  const draft=window.__authDraft||{};
+  const identifierLabel=loginMethod==="email"?"البريد الإلكتروني":loginMethod==="username"?"اليوزر نيم":"رقم الموبايل";
+  const identifierPlaceholder=loginMethod==="email"?"name@example.com":loginMethod==="username"?"tony_2026":"01xxxxxxxxx";
+  const identifierAttrs=loginMethod==="email"?'type="email"':loginMethod==="username"?'autocomplete="username"':'inputmode="tel"';
   $("#authLayer").innerHTML=`<div class="modal"><div class="box" style="max-width:460px">
     <div class="between"><div><h1>مُذاكرة</h1><p class="muted sm">${staff?"دخول الإدارة والصلاحيات":"دخول الطالب وحفظ تقدّمك"}</p></div><span style="font-size:42px">📚</span></div>
     <div class="row" style="margin:14px 0;flex-wrap:wrap">
@@ -188,14 +189,14 @@ function renderAuth(message=""){
       ${!staff?`<button class="chip ${mode==="signup"?"on":""}" data-auth="signup">إنشاء حساب طالب</button>`:`<button class="chip ${mode==="login"?"on":""}" data-auth="login">تسجيل الدخول</button>`}
     </div>
     ${message?`<div class="card" style="margin-bottom:10px;border-color:var(--bad);color:var(--bad)">${esc(message)}</div>`:""}
-    ${!staff&&mode==="signup"?`<label class="field"><span>الاسم</span><input id="auth_name" autocomplete="name" placeholder="اسمك"></label>`:""}
-    ${!staff&&mode==="signup"?`<label class="field"><span>اليوزر نيم</span><input id="auth_username" autocomplete="username" placeholder="مثال: tony_2026" maxlength="30"></label>`:""}
-    ${!staff&&mode==="signup"?`<label class="field"><span>رقم الموبايل</span><input id="auth_phone" inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx"></label>`:""}
+    ${!staff&&mode==="signup"?`<label class="field"><span>الاسم</span><input id="auth_name" autocomplete="name" placeholder="اسمك" value="${esc(draft.name||"")}"></label>`:""}
+    ${!staff&&mode==="signup"?`<label class="field"><span>اليوزر نيم</span><input id="auth_username" autocomplete="username" placeholder="مثال: tony_2026" maxlength="30" value="${esc(draft.username||"")}"></label>`:""}
+    ${!staff&&mode==="signup"?`<label class="field"><span>رقم الموبايل</span><input id="auth_phone" inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx" value="${esc(draft.phone||"")}"></label>`:""}
     ${!staff&&mode==="signup"?`<label class="field"><span>الصف الدراسي</span><select id="auth_grade">${educationGradeOptions(S.grade)}</select></label>`:""}
     ${!staff&&mode==="signup"?`<label class="field"><span>الشعبة</span><select id="auth_branch">${educationBranchOptions(S.grade,S.branch)}</select></label>`:""}
 
     ${staff?`<label class="field"><span>البريد الإلكتروني</span><input id="auth_identifier" type="email" autocomplete="username" placeholder="admin@example.com"></label>`:""}
-    ${!staff&&mode==="login"?`<div class="row" style="margin-bottom:8px"><button class="chip ${loginMethod==="phone"?"on":""}" data-login-method="phone">📱 رقم الموبايل</button><button class="chip ${loginMethod==="email"?"on":""}" data-login-method="email">✉️ البريد الإلكتروني</button></div><label class="field"><span>${identifierLabel}</span><input id="auth_identifier" ${identifierAttrs} autocomplete="username" placeholder="${identifierPlaceholder}"></label>`:""}
+    ${!staff&&mode==="login"?`<div class="row" style="margin-bottom:8px"><button class="chip ${loginMethod==="phone"?"on":""}" data-login-method="phone">📱 رقم الموبايل</button><button class="chip ${loginMethod==="email"?"on":""}" data-login-method="email">✉️ البريد الإلكتروني</button><button class="chip ${loginMethod==="username"?"on":""}" data-login-method="username">👤 اليوزر نيم</button></div><label class="field"><span>${identifierLabel}</span><input id="auth_identifier" ${identifierAttrs} placeholder="${identifierPlaceholder}" value="${esc(draft.identifier||"")}"></label>`:""}
     <label class="field"><span>كلمة المرور</span><input id="auth_password" type="password" autocomplete="${mode==="login"?"current-password":"new-password"}" placeholder="8 أحرف على الأقل"></label>
     ${!staff&&mode==="signup"?`<p class="muted sm">اليوزر نيم لازم يكون مميز. تسجيل الدخول للطالب متاح برقم الموبايل أو البريد الإلكتروني إذا تم ربط بريد بالحساب من الـ OWNER.</p>`:""}
     <button class="btn primary" style="width:100%;margin-top:8px" data-auth-submit="${mode}">${AUTH.busy?"جاري التنفيذ…":mode==="signup"?"إنشاء الحساب":"دخول"}</button>
@@ -449,6 +450,11 @@ document.addEventListener("click",e=>{
 });
 
 document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-act="refreshhealth"]');
+  if(b && AUTH.user?.role==='owner'){ fetchHealth(); return; }
+});
+
+document.addEventListener('click',e=>{
   const b=e.target.closest('[data-act="refreshusers"]');
   if(b && AUTH.user?.role==='owner'){ fetchUsers(); return; }
 });
@@ -523,7 +529,7 @@ document.addEventListener("click",e=>{
   const kindBtn=e.target.closest("[data-auth-kind]");
   if(kindBtn){ window.__authKind=kindBtn.dataset.authKind; window.__authMode="login"; if(window.__authKind==="student"&&!window.__loginMethod) window.__loginMethod="phone"; renderAuth(); return; }
   const loginBtn=e.target.closest("[data-login-method]");
-  if(loginBtn){ window.__loginMethod=loginBtn.dataset.loginMethod; renderAuth(); return; }
+  if(loginBtn){ window.__authDraft={...(window.__authDraft||{}),identifier:$("#auth_identifier")?.value||""}; window.__loginMethod=loginBtn.dataset.loginMethod; renderAuth(); return; }
   const b=e.target.closest("[data-auth]"); if(b){ window.__authMode=b.dataset.auth; renderAuth(); return; }
   const submit=e.target.closest("[data-auth-submit]");
   if(submit){

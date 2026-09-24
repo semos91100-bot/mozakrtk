@@ -41,7 +41,7 @@ function now(){ return new Date().toISOString(); }
 function email(v){ return String(v || '').trim().toLowerCase(); }
 function username(v){ return String(v || '').trim().toLowerCase(); }
 function validUsername(v){ return /^[\p{L}\p{N}_.-]{3,30}$/u.test(String(v||'').trim()); }
-async function getStudentByUsername(v){ const u=username(v); const rows=await sb(`users?select=id,email,phone,username,name,password_hash,role,state,created_at,updated_at&username=eq.${eq(u)}&limit=1`); return rows?.[0]||null; }
+async function getStudentByUsername(v){ const u=username(v); let rows=await sb(`users?select=id,email,phone,username,name,password_hash,role,state,created_at,updated_at&username=eq.${eq(u)}&limit=1`); if(!rows?.[0]) rows=await sb(`users?select=id,email,phone,username,name,password_hash,role,state,created_at,updated_at&username=ilike.${eq(u)}&limit=1`); return rows?.[0]||null; }
 function normalizePhone(v){
   let p=String(v||'').trim().replace(/[\s().-]/g,'');
   if(p.startsWith('00')) p='+'+p.slice(2);
@@ -81,11 +81,16 @@ function cookieValue(req,name){
   return m ? decodeURIComponent(m.slice(name.length+1)) : '';
 }
 function sessionUser(req){ return verifySession(cookieValue(req,'mozakra_session')); }
-function setSession(res, user){
-  const token = signPayload({id:String(user.id),email:user.email||'',phone:user.phone||'',role:user.role,name:user.name,exp:Date.now()+1000*60*60*24*30});
-  res.setHeader('Set-Cookie', `mozakra_session=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000`);
+function secureRequest(req){
+  const proto=String(req?.headers?.['x-forwarded-proto']||req?.headers?.['x-forwarded-protocol']||'').split(',')[0].trim().toLowerCase();
+  return proto==='https' || !!req?.socket?.encrypted;
 }
-function clearSession(res){ res.setHeader('Set-Cookie','mozakra_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0'); }
+function cookieAttrs(req, maxAge){ return `Path=/; HttpOnly; ${secureRequest(req)?'Secure; ':''}SameSite=Lax; Max-Age=${maxAge}`; }
+function setSession(res, user, req){
+  const token = signPayload({id:String(user.id),email:user.email||'',phone:user.phone||'',role:user.role,name:user.name,exp:Date.now()+1000*60*60*24*30});
+  res.setHeader('Set-Cookie', `mozakra_session=${encodeURIComponent(token)}; ${cookieAttrs(req,2592000)}`);
+}
+function clearSession(res,req){ res.setHeader('Set-Cookie',`mozakra_session=; ${cookieAttrs(req,0)}`); }
 async function readBody(req){
   if(req.body && typeof req.body === 'object') return req.body;
   return await new Promise(resolve=>{
@@ -146,13 +151,27 @@ async function getUserById(id){
   return rows?.[0]||null;
 }
 async function getStudentByEmail(e){
-  const rows=await sb(`users?select=id,email,phone,username,name,password_hash,role,state,created_at,updated_at&email=eq.${eq(e)}&limit=1`);
+  const v=email(e);
+  let rows=await sb(`users?select=id,email,phone,username,name,password_hash,role,state,created_at,updated_at&email=eq.${eq(v)}&limit=1`);
+  if(!rows?.[0]) rows=await sb(`users?select=id,email,phone,username,name,password_hash,role,state,created_at,updated_at&email=ilike.${eq(v)}&limit=1`);
   return rows?.[0]||null;
 }
+function phoneVariants(v){
+  const raw=String(v||'').trim();
+  const digits=raw.replace(/\D/g,'');
+  const normalized=normalizePhone(raw);
+  const out=new Set([normalized, raw, digits]);
+  if(digits.startsWith('20') && digits.length===12) out.add('0'+digits.slice(2));
+  if(digits.startsWith('01') && digits.length===11) out.add('+20'+digits.slice(1));
+  if(normalized.startsWith('+20') && normalized.length===13) out.add(normalized.slice(1));
+  return [...out].filter(Boolean);
+}
 async function getStudentByPhone(p){
-  const phone=normalizePhone(p);
-  const rows=await sb(`users?select=id,email,phone,username,name,password_hash,role,state,created_at,updated_at&phone=eq.${eq(phone)}&limit=1`);
-  return rows?.[0]||null;
+  for(const variant of phoneVariants(p)){
+    const rows=await sb(`users?select=id,email,phone,username,name,password_hash,role,state,created_at,updated_at&phone=eq.${eq(variant)}&limit=1`);
+    if(rows?.[0]) return rows[0];
+  }
+  return null;
 }
 
 async function ensureOwnerUser(owner=OWNER_ACCOUNTS[0]){
@@ -211,6 +230,10 @@ async function handler(req,res){
   if(!configured()) return fail(res,503,'BACKEND_NOT_CONFIGURED');
 
   try{
+    if(action==='health' && method==='GET'){
+      const rows=await sb('users?select=id&limit=1');
+      return ok(res,{database:'ok',usersTable:'ok',timestamp:now(),countHint:Array.isArray(rows)?rows.length:0});
+    }
     if(action==='me'){
       const u=sessionUser(req); return ok(res,{authenticated:!!u,user:u||undefined});
     }
@@ -234,7 +257,7 @@ async function handler(req,res){
         const owner=await ensureOwnerUser(ownerCfg);
         if(!owner) return fail(res,500,'SERVER_ERROR');
         const safe=safeUser({...owner,role:'owner',email:ownerCfg.email,name:ownerCfg.name||owner.name||'OWNER'});
-        setSession(res,safe); await audit(safe,'login_success',{method:'owner_email'}); return ok(res,{authenticated:true,user:safe});
+        setSession(res,safe,req); await audit(safe,'login_success',{method:'owner_email'}); return ok(res,{authenticated:true,user:safe});
       }
       if(!['phone','email','username','auto'].includes(loginMethod)) return fail(res,422,'LOGIN_FAILED');
       if(loginMethod==='email' && !e.includes('@')) return fail(res,422,'INVALID_EMAIL');
@@ -242,7 +265,7 @@ async function handler(req,res){
       if(loginMethod==='username' && !validUsername(identifier)) return fail(res,422,'INVALID_USERNAME');
       const u=await findUser(identifier,loginMethod);
       if(!u || u.password_hash!==hashPassword(pass)) return fail(res,401,'LOGIN_FAILED');
-      const safe=safeUser(u); setSession(res,safe); await audit(safe,'login_success',{method:loginMethod==='auto'?(e?'email':validPhone(identifier)?'phone':'username'):loginMethod}); return ok(res,{authenticated:true,user:safe});
+      const safe=safeUser(u); setSession(res,safe,req); await audit(safe,'login_success',{method:loginMethod==='auto'?(e?'email':validPhone(identifier)?'phone':'username'):loginMethod}); return ok(res,{authenticated:true,user:safe});
     }
     if(action==='signup' && method==='POST'){
       const p=normalizePhone(body.phone), pass=String(body.password||''), name=String(body.name||'').trim().slice(0,120), un=username(body.username);
@@ -257,9 +280,9 @@ async function handler(req,res){
       const byUsername=await getStudentByUsername(un); if(byUsername) return fail(res,409,'USERNAME_EXISTS');
       const byPhone=await getStudentByPhone(p); if(byPhone) return fail(res,409,'PHONE_EXISTS');
       const inserted=await sb('users',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({email:null,phone:p,username:un,name:name||'طالب',role:'student',password_hash:hashPassword(pass),state:{name:name||'طالب',username:un,grade,branch,onboarded:true},created_at:now(),updated_at:now()})});
-      const u=inserted[0], safe=safeUser(u); setSession(res,safe); await audit(safe,'signup',{role:'student',username:un}); return ok(res,{authenticated:true,user:safe});
+      const u=inserted[0], safe=safeUser(u); setSession(res,safe,req); await audit(safe,'signup',{role:'student',username:un}); return ok(res,{authenticated:true,user:safe});
     }
-    if(action==='logout' && method==='POST'){ const u=sessionUser(req); if(u) await audit(u,'logout'); clearSession(res); return ok(res); }
+    if(action==='logout' && method==='POST'){ const u=sessionUser(req); if(u) await audit(u,'logout'); clearSession(res,req); return ok(res); }
     if(action==='state'){
       const u=requireUser(req); if(isStaff(u.role)) return ok(res,{state:{},updated:Date.now()});
       const row=await getStudentById(u.id); if(!row) return fail(res,401,'AUTH_REQUIRED');
@@ -465,6 +488,9 @@ async function handler(req,res){
     // لا نرجع تفاصيل Supabase الخام حتى لا نكشف معلومات داخلية.
     let code=e.code||'SERVER_ERROR';
     if(code==='SERVER_ERROR' && e?.data?.code) code=String(e.data.code);
+    if(code==='42P01') code='SUPABASE_TABLE_MISSING';
+    if(code==='42703') code='SUPABASE_COLUMN_MISSING';
+    if(code==='PGRST205') code='SUPABASE_TABLE_MISSING';
     if(code==='23505'){
       const msg=String(e?.data?.message||e?.message||'').toLowerCase();
       code=msg.includes('username')?'USERNAME_EXISTS':msg.includes('phone')?'PHONE_EXISTS':msg.includes('email')?'EMAIL_EXISTS':'DUPLICATE_ENTRY';
