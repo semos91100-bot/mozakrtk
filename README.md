@@ -44,3 +44,12 @@ The OWNER account (default `semos91100@gmail.com`) has a protected control panel
 It can list registered accounts by name/phone/email, change non-owner roles, assign email addresses, and permanently delete non-owner accounts. Account deletion is server-side and cascades through user-owned tickets/notifications via the existing Supabase foreign keys.
 
 The internal `#/admin-chat` is available to OWNER and all staff roles. Students are blocked from the staff chat by the API authorization checks.
+
+
+## سجل نشاط OWNER
+تمت إضافة جدول `audit_logs` وواجهة `audit_logs` التي لا يمكن الوصول إليها إلا للـOWNER.
+يسجل: الدخول الناجح، تسجيل الخروج، إنشاء الحساب، تغيير الرتب، تغيير البريد، حذف الحسابات، الإشعارات، التذاكر، وردود التذاكر، ورسائل شات الإدارة.
+شغّل `SUPABASE.sql` بعد التحديث لإنشاء جدول السجل.
+
+## الرتبة الافتراضية
+أي حساب جديد يبدأ تلقائيًا برتبة `student`، والـOWNER فقط يستطيع رفعه إلى رتبة إدارية.

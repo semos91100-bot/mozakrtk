@@ -445,6 +445,15 @@ function vAdmin(){
         </div>
       </div>
     </div>`).join('')}</div>`:`<div class="empty"><b>مفيش حسابات مسجلة لسه</b></div>`}
+  </div>
+  <div class="between" style="margin-bottom:10px"><h2>🧾 سجل النشاط</h2><span class="xs muted">آخر ${Math.min((AUDITLOGS||[]).length,100)} عملية</span></div>
+  <div class="card" style="margin-bottom:24px">
+    ${(AUDITLOGS||[]).length?`<div id="ownerAuditList">${AUDITLOGS.slice(0,100).map(a=>{
+      const d=a.details||{};
+      const labels={login_success:'دخول ناجح',logout:'تسجيل خروج',signup:'إنشاء حساب',role_changed:'تغيير رتبة',email_changed:'تغيير بريد',user_deleted:'حذف حساب',notification_sent:'إرسال إشعار',ticket_created:'فتح تذكرة',ticket_reply:'رد على تذكرة',admin_chat_message:'رسالة شات الإدارة'};
+      const extra= a.action==='role_changed'?` → ${esc(roleLabel(d.to_role||'student'))}`:a.action==='notification_sent'?` · ${esc(d.target||'all')}`:a.action==='user_deleted'?` · ${esc(d.role||'student')}`:a.action==='ticket_created'?` · ${esc(d.subject||'تذكرة')}`:'';
+      return `<div class="item" style="align-items:flex-start;margin-bottom:7px"><div class="ico">${a.actorRole==='owner'?'👑':a.actorRole==='admin'?'🔴':a.actorRole==='moderator'?'🟠':a.actorRole==='support'?'🔵':'👤'}</div><div class="gr"><div><b>${esc(labels[a.action]||a.action)}</b>${extra}</div><span class="sm muted">بواسطة ${esc(a.actorName||'زائر')} · ${esc(roleLabel(a.actorRole||'student'))}${a.targetName?` · الهدف: ${esc(a.targetName)}`:''} · ${fmtTicketTimeOld(a.createdAt)}</span></div></div>`;
+    }).join('')}</div>`:`<div class="empty"><b>مفيش نشاط مسجل لسه</b><div class="sm muted">أول ما حد يسجل أو يدخل أو يعمل إجراء، هيظهر هنا.</div></div>`}
   </div>`:''}
 
   <div class="between" style="margin-bottom:10px"><h2>🆘 الدعم الفني</h2>${open?`<span class="chip on">${open} مفتوحة</span>`:""}</div>

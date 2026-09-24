@@ -29,6 +29,11 @@ async function fetchNotifications(){
 let SUPPORT={tickets:[],isAdmin:false};
 let USERS=[];
 let ADMINCHAT={messages:[]};
+let AUDITLOGS=[];
+async function fetchAuditLogs(){
+  if(!AUTH.user || AUTH.user.role!=='owner') return;
+  try{ const d=await apiJSON('audit_logs'); if(d.ok){ AUDITLOGS=d.logs||[]; if((location.hash||'').startsWith('#/admin')) render(); } }catch(e){}
+}
 const ROLE_META={owner:{name:"OWNER 👑",color:"var(--bad)"},admin:{name:"ADMIN 🔴",color:"var(--warn)"},moderator:{name:"MODERATOR 🟠",color:"var(--accent)"},support:{name:"SUPPORT 🔵",color:"var(--ok)"},student:{name:"STUDENT 👤",color:"var(--muted)"}};
 const ROLE_LEVEL={student:0,support:1,moderator:2,admin:3,owner:4};
 function roleLabel(role){ return ROLE_META[role]?.name||"STUDENT 👤"; }
@@ -102,8 +107,19 @@ async function refreshSharedData(){
   const route=(location.hash||"#/dash").slice(2).split("?")[0].split("/")[0];
   if(route==="support" || route==="admin") try{ await fetchSupport(); }catch(e){}
   if(route==="admin" && isManagerRole(AUTH.user.role)) try{ await fetchUsers(); }catch(e){}
+  if(route==="admin" && AUTH.user.role==='owner') try{ await fetchAuditLogs(); }catch(e){}
   if(route==="admin-chat" && isStaffRole(AUTH.user.role)) try{ await fetchAdminChat(); }catch(e){}
 }
+let auditPollTimer=null;
+function startAuditPolling(){
+  clearInterval(auditPollTimer);
+  if(!AUTH.user || AUTH.user.role!=='owner') return;
+  auditPollTimer=setInterval(()=>{
+    const route=(location.hash||'').slice(2).split('?')[0].split('/')[0];
+    if(route==='admin') fetchAuditLogs();
+  },8000);
+}
+
 async function initAuth(){
   try{
     const d=await apiJSON("me");
@@ -112,11 +128,13 @@ async function initAuth(){
   AUTH.ready=true; render(); renderAuth();
   if(AUTH.user && !S.onboarded) onboarding();
   if(AUTH.user) {
+    startAuditPolling();
     fetchNotifications();
     setTimeout(()=>refreshSharedData(),300);
     const route=(location.hash||"#/dash").slice(2).split("?")[0].split("/")[0];
     if(route==="support" || route==="admin") fetchSupport();
     if(route==="admin" && isManagerRole(AUTH.user.role)) fetchUsers();
+    if(route==="admin" && AUTH.user.role==='owner') fetchAuditLogs();
     if(route==="admin-chat" && isStaffRole(AUTH.user.role)) fetchAdminChat();
   }
 }
@@ -139,6 +157,7 @@ async function loginAccount(identifier,password,kind="student"){
   render();
   if(!S.onboarded && !isStaffRole(AUTH.user.role)) onboarding();
   await fetchNotifications(); await refreshSharedData();
+  startAuditPolling();
 }
 async function signupAccount(name,phone,password,emailValue=""){
   phone=(phone||"").trim(); password=password||""; emailValue=(emailValue||"").trim().toLowerCase();
@@ -163,6 +182,8 @@ async function logoutAccount(){
     AUTH.busy=false;
     SERVERNOTIFS=[];
     SUPPORT={tickets:[],isAdmin:false};
+    AUDITLOGS=[];
+    clearInterval(auditPollTimer);
     render();
     $("#authLayer").innerHTML="";
     syncAuthButton();
