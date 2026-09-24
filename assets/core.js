@@ -148,12 +148,12 @@ async function initAuth(){
     if(route==="admin-chat" && isStaffRole(AUTH.user.role)) fetchAdminChat();
   }
 }
-async function loginAccount(identifier,password,kind="student"){
+async function loginAccount(identifier,password,kind="student",loginMethod="auto"){
   identifier=(identifier||"").trim(); password=password||"";
-  if(!identifier){ renderAuth(kind==="staff"?"اكتب البريد الإلكتروني.":"اكتب رقم الموبايل."); return; }
+  if(!identifier){ renderAuth(kind==="staff"?"اكتب البريد الإلكتروني.":(loginMethod==="email"?"اكتب البريد الإلكتروني.":"اكتب رقم الموبايل.")); return; }
   if(!password){ renderAuth("اكتب كلمة المرور."); return; }
   AUTH.busy=true; renderAuth();
-  const d=await apiJSON("login",{method:"POST",body:JSON.stringify({identifier,phone:kind==="student"?identifier:"",email:kind==="staff"?identifier:"",password})});
+  const d=await apiJSON("login",{method:"POST",body:JSON.stringify({identifier,loginMethod,phone:loginMethod==="phone"?identifier:"",email:loginMethod==="email"?identifier:"",password})});
   if(!d.ok){ AUTH.busy=false; renderAuth(authMessage(d.error)); return; }
   AUTH.user=d.user;
   const st=await apiJSON("state");
@@ -169,15 +169,16 @@ async function loginAccount(identifier,password,kind="student"){
   await fetchNotifications(); await refreshSharedData();
   startAuditPolling();
 }
-async function signupAccount(name,phone,password,emailValue="",grade=DEFAULT_EDUCATION.grade,branch=DEFAULT_EDUCATION.branch){
-  phone=(phone||"").trim(); password=password||""; emailValue=(emailValue||"").trim().toLowerCase();
+async function signupAccount(name,username,phone,password,grade=DEFAULT_EDUCATION.grade,branch=DEFAULT_EDUCATION.branch){
+  phone=(phone||"").trim(); username=(username||"").trim(); password=password||"";
   grade=EDU.grades[grade]?grade:DEFAULT_EDUCATION.grade;
   branch=EDU.grades[grade]?.branches?.some(b=>b.id===branch)?branch:(EDU.grades[grade]?.branches?.[0]?.id||DEFAULT_EDUCATION.branch);
   if(!name) { renderAuth("اكتب اسمك."); return; }
+  if(!username) { renderAuth("اختار يوزر نيم."); return; }
   if(!phone) { renderAuth("اكتب رقم الموبايل."); return; }
   if(!password) { renderAuth("اكتب كلمة المرور."); return; }
   AUTH.busy=true; renderAuth();
-  const d=await apiJSON("signup",{method:"POST",body:JSON.stringify({name,phone,password,email:emailValue,grade,branch})});
+  const d=await apiJSON("signup",{method:"POST",body:JSON.stringify({name,username,phone,password,grade,branch})});
   if(!d.ok){ AUTH.busy=false; renderAuth(authMessage(d.error)); return; }
   AUTH.user=d.user; S.name=name.trim()||S.name; S.grade=grade; S.branch=branch; S.onboarded=true; S.updated=Date.now();
   await apiJSON("state",{method:"POST",body:JSON.stringify({state:S})});
@@ -202,7 +203,7 @@ async function logoutAccount(){
   }
 }
 function authMessage(code){
-  return ({NETWORK_ERROR:"مش قادر أوصل بخدمة الموقع. اتأكد إن الموقع مرفوع على Vercel بشكل صحيح.",BAD_RESPONSE:"حصلت مشكلة في تشغيل خدمة الموقع. أعد تحميل الصفحة وجرب تاني.",TOO_MANY_ATTEMPTS:"محاولات دخول كتير. استنى شوية وجرب تاني.",STORAGE_ERROR:"الموقع مش قادر يحفظ بيانات الحسابات في المتصفح.",EMAIL_EXISTS:"الإيميل ده مسجل بالفعل." ,PHONE_EXISTS:"رقم الموبايل ده مسجل بالفعل.",INVALID_PHONE:"اكتب رقم موبايل مصري صحيح.",EMAIL_OWNER_ONLY:"إضافة البريد الإلكتروني متاحة للـ OWNER فقط.",OWNER_ONLY:"الصلاحية دي للـ OWNER فقط.",USER_NOT_FOUND:"المستخدم مش موجود.",CANNOT_CHANGE_SELF_ROLE:"مش مسموح تغيّر رتبتك بنفسك.",OWNER_PROTECTED:"رتبة OWNER محمية ومحدش يقدر يغيرها.",ROLE_NOT_ALLOWED:"الرتبة دي مش مسموح لك تعيينها.",LOGIN_FAILED:"الإيميل أو كلمة المرور غير صحيحة.",INVALID_EMAIL:"اكتب بريد إلكتروني صحيح.",PASSWORD_SHORT:"كلمة المرور لازم تكون 8 أحرف على الأقل.",PASSWORD_LONG:"كلمة المرور طويلة جدًا.",REQUEST_FAILED:"حصلت مشكلة في الاتصال بالسيرفر.",SERVER_ERROR:"حصل خطأ في السيرفر.",AI_NOT_CONFIGURED:"مدرس AI محتاج تفعيل مفتاح Gemini على السيرفر."}[code]||"حصل خطأ. جرّب تاني.");
+  return ({NETWORK_ERROR:"مش قادر أوصل بخدمة الموقع. اتأكد إن الموقع مرفوع على Vercel بشكل صحيح.",BAD_RESPONSE:"حصلت مشكلة في تشغيل خدمة الموقع. أعد تحميل الصفحة وجرب تاني.",TOO_MANY_ATTEMPTS:"محاولات دخول كتير. استنى شوية وجرب تاني.",STORAGE_ERROR:"الموقع مش قادر يحفظ بيانات الحسابات في المتصفح.",EMAIL_EXISTS:"الإيميل ده مسجل بالفعل." ,USERNAME_EXISTS:"اليوزر نيم ده مستخدم بالفعل.",INVALID_USERNAME:"اليوزر نيم لازم يكون من 3 إلى 30 حرف أو رقم، ويسمح بـ _ . - فقط.",NAME_REQUIRED:"اكتب اسمك.",PHONE_EXISTS:"رقم الموبايل ده مسجل بالفعل.",INVALID_PHONE:"اكتب رقم موبايل مصري صحيح.",EMAIL_OWNER_ONLY:"إضافة البريد الإلكتروني متاحة للـ OWNER فقط.",OWNER_ONLY:"الصلاحية دي للـ OWNER فقط.",USER_NOT_FOUND:"المستخدم مش موجود.",CANNOT_CHANGE_SELF_ROLE:"مش مسموح تغيّر رتبتك بنفسك.",OWNER_PROTECTED:"رتبة OWNER محمية ومحدش يقدر يغيرها.",ROLE_NOT_ALLOWED:"الرتبة دي مش مسموح لك تعيينها.",LOGIN_FAILED:"بيانات تسجيل الدخول غير صحيحة.",INVALID_EMAIL:"اكتب بريد إلكتروني صحيح.",PASSWORD_SHORT:"كلمة المرور لازم تكون 8 أحرف على الأقل.",PASSWORD_LONG:"كلمة المرور طويلة جدًا.",REQUEST_FAILED:"حصلت مشكلة في الاتصال بالسيرفر.",SERVER_ERROR:"حصل خطأ في السيرفر.",AI_NOT_CONFIGURED:"مدرس AI محتاج تفعيل مفتاح Gemini على السيرفر."}[code]||"حصل خطأ. جرّب تاني.");
 }
 let cloudTimer=null;
 function cloudPush(){

@@ -29,6 +29,9 @@ function send(res, status, data, extraHeaders={}){
 }
 function now(){ return new Date().toISOString(); }
 function email(v){ return String(v || '').trim().toLowerCase(); }
+function username(v){ return String(v || '').trim().toLowerCase(); }
+function validUsername(v){ return /^[\p{L}\p{N}_.-]{3,30}$/u.test(String(v||'').trim()); }
+async function getStudentByUsername(v){ const u=username(v); const rows=await sb(`users?select=id,email,phone,username,name,password_hash,role,state,created_at,updated_at&username=eq.${eq(u)}&limit=1`); return rows?.[0]||null; }
 function normalizePhone(v){
   let p=String(v||'').trim().replace(/[\s().-]/g,'');
   if(p.startsWith('00')) p='+'+p.slice(2);
@@ -104,7 +107,7 @@ function requireStaff(req){ const u=requireUser(req); if(!isStaff(u.role)) throw
 function requireManager(req){ const u=requireUser(req); if(!isManager(u.role)) throw Object.assign(new Error('FORBIDDEN'),{code:'FORBIDDEN',status:403}); return u; }
 function ok(res,data={}){ send(res,200,{ok:true,...data}); }
 function fail(res,status,error){ send(res,status,{ok:false,error}); }
-function safeUser(u){ return u ? {id:u.id,email:u.email||'',phone:u.phone||'',name:u.name||'طالب',role:u.role||'student'} : null; }
+function safeUser(u){ return u ? {id:u.id,email:u.email||'',phone:u.phone||'',username:u.username||'',name:u.name||'طالب',role:u.role||'student'} : null; }
 function targetEmailOrAll(to){ return email(to||'all'); }
 
 // سجل نشاط مركزي يراه الـ OWNER فقط. لا نضع كلمات مرور أو مفاتيح جلسات داخل السجل.
@@ -125,20 +128,20 @@ async function audit(actor, action, details={}, target=null){
 async function auditLogin(user){ return audit(user,'login_success'); }
 
 async function getStudentById(id){
-  const rows=await sb(`users?select=id,email,phone,name,password_hash,role,state,created_at,updated_at&id=eq.${eq(id)}&limit=1`);
+  const rows=await sb(`users?select=id,email,phone,username,name,password_hash,role,state,created_at,updated_at&id=eq.${eq(id)}&limit=1`);
   return rows?.[0]||null;
 }
 async function getUserById(id){
-  const rows=await sb(`users?select=id,email,phone,name,password_hash,role,state,created_at,updated_at&id=eq.${eq(id)}&limit=1`);
+  const rows=await sb(`users?select=id,email,phone,username,name,password_hash,role,state,created_at,updated_at&id=eq.${eq(id)}&limit=1`);
   return rows?.[0]||null;
 }
 async function getStudentByEmail(e){
-  const rows=await sb(`users?select=id,email,phone,name,password_hash,role,state,created_at,updated_at&email=eq.${eq(e)}&limit=1`);
+  const rows=await sb(`users?select=id,email,phone,username,name,password_hash,role,state,created_at,updated_at&email=eq.${eq(e)}&limit=1`);
   return rows?.[0]||null;
 }
 async function getStudentByPhone(p){
   const phone=normalizePhone(p);
-  const rows=await sb(`users?select=id,email,phone,name,password_hash,role,state,created_at,updated_at&phone=eq.${eq(phone)}&limit=1`);
+  const rows=await sb(`users?select=id,email,phone,username,name,password_hash,role,state,created_at,updated_at&phone=eq.${eq(phone)}&limit=1`);
   return rows?.[0]||null;
 }
 
@@ -154,10 +157,12 @@ async function ensureOwnerUser(owner=OWNER_ACCOUNTS[0]){
   const inserted=await sb('users',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({email:owner.email,phone:null,name:owner.name||'OWNER',role:'owner',password_hash:hashPassword(owner.password),state:{},created_at:now(),updated_at:now()})});
   return inserted?.[0]||null;
 }
-async function findUser(identifier){
+async function findUser(identifier, method='auto'){
   const raw=String(identifier||'').trim();
-  if(raw.includes('@')) return getStudentByEmail(email(raw));
-  return getStudentByPhone(raw);
+  if(method==='email' || (method==='auto' && raw.includes('@'))) return getStudentByEmail(email(raw));
+  if(method==='phone' || (method==='auto' && /^\+?\d/.test(raw))) return getStudentByPhone(raw);
+  if(method==='username') return getStudentByUsername(raw);
+  return getStudentByUsername(raw);
 }
 
 async function ticketWithMessages(id){
@@ -185,10 +190,12 @@ async function handler(req,res){
       const u=sessionUser(req); return ok(res,{authenticated:!!u,user:u||undefined});
     }
     if(action==='login' && method==='POST'){
-      const identifier=String(body.identifier||body.phone||body.email||'').trim();
+      const identifier=String(body.identifier||body.phone||body.email||body.username||'').trim();
       const pass=String(body.password||'');
+      const loginMethod=String(body.loginMethod||'auto').toLowerCase();
+      if(!identifier) return fail(res,422,'LOGIN_FAILED');
       const e=email(identifier);
-      if(e && OWNER_EMAILS.has(e)){
+      if((loginMethod==='email' || (loginMethod==='auto' && e.includes('@'))) && e && OWNER_EMAILS.has(e)){
         const ownerCfg=OWNER_ACCOUNTS.find(x=>x.email===e);
         if(!ownerCfg || pass!==ownerCfg.password) return fail(res,401,'LOGIN_FAILED');
         const owner=await ensureOwnerUser(ownerCfg);
@@ -196,24 +203,28 @@ async function handler(req,res){
         const safe=safeUser({...owner,role:'owner',email:ownerCfg.email,name:ownerCfg.name||owner.name||'OWNER'});
         setSession(res,safe); await audit(safe,'login_success',{method:'owner_email'}); return ok(res,{authenticated:true,user:safe});
       }
-      const u=await findUser(identifier);
+      if(!['phone','email','username','auto'].includes(loginMethod)) return fail(res,422,'LOGIN_FAILED');
+      if(loginMethod==='email' && !e.includes('@')) return fail(res,422,'INVALID_EMAIL');
+      if(loginMethod==='phone' && !validPhone(identifier)) return fail(res,422,'INVALID_PHONE');
+      if(loginMethod==='username' && !validUsername(identifier)) return fail(res,422,'INVALID_USERNAME');
+      const u=await findUser(identifier,loginMethod);
       if(!u || u.password_hash!==hashPassword(pass)) return fail(res,401,'LOGIN_FAILED');
-      const safe=safeUser(u); setSession(res,safe); await audit(safe,'login_success',{method:e?'email':'phone'}); return ok(res,{authenticated:true,user:safe});
+      const safe=safeUser(u); setSession(res,safe); await audit(safe,'login_success',{method:loginMethod==='auto'?(e?'email':validPhone(identifier)?'phone':'username'):loginMethod}); return ok(res,{authenticated:true,user:safe});
     }
     if(action==='signup' && method==='POST'){
-      const p=normalizePhone(body.phone), pass=String(body.password||''), name=String(body.name||'').trim().slice(0,120), e=email(body.email);
+      const p=normalizePhone(body.phone), pass=String(body.password||''), name=String(body.name||'').trim().slice(0,120), un=username(body.username);
       const grade=EDU_GRADES_SERVER[String(body.grade||'')] ? String(body.grade) : 'third';
       const validBranches=EDU_GRADES_SERVER[grade]?.branches||[];
       const branch=validBranches.some(x=>x.id===String(body.branch||'')) ? String(body.branch) : (validBranches[0]?.id||'science_biology');
+      if(!name) return fail(res,422,'NAME_REQUIRED');
+      if(!validUsername(un)) return fail(res,422,'INVALID_USERNAME');
       if(!validPhone(p)) return fail(res,422,'INVALID_PHONE');
       if(pass.length<8) return fail(res,422,'PASSWORD_SHORT');
       if(pass.length>200) return fail(res,422,'PASSWORD_LONG');
-      if(e) return fail(res,403,'EMAIL_OWNER_ONLY');
-      if(!validEmail(e)) return fail(res,422,'INVALID_EMAIL');
+      const byUsername=await getStudentByUsername(un); if(byUsername) return fail(res,409,'USERNAME_EXISTS');
       const byPhone=await getStudentByPhone(p); if(byPhone) return fail(res,409,'PHONE_EXISTS');
-      if(e){ const byEmail=await getStudentByEmail(e); if(byEmail || e===OWNER_EMAIL) return fail(res,409,'EMAIL_EXISTS'); }
-      const inserted=await sb('users',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({email:null,phone:p,name:name||'طالب',role:'student',password_hash:hashPassword(pass),state:{name:name||'طالب',grade,branch,onboarded:true},created_at:now(),updated_at:now()})});
-      const u=inserted[0], safe=safeUser(u); setSession(res,safe); await audit(safe,'signup',{role:'student'}); return ok(res,{authenticated:true,user:safe});
+      const inserted=await sb('users',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({email:null,phone:p,username:un,name:name||'طالب',role:'student',password_hash:hashPassword(pass),state:{name:name||'طالب',username:un,grade,branch,onboarded:true},created_at:now(),updated_at:now()})});
+      const u=inserted[0], safe=safeUser(u); setSession(res,safe); await audit(safe,'signup',{role:'student',username:un}); return ok(res,{authenticated:true,user:safe});
     }
     if(action==='logout' && method==='POST'){ const u=sessionUser(req); if(u) await audit(u,'logout'); clearSession(res); return ok(res); }
     if(action==='state'){
@@ -362,9 +373,9 @@ async function handler(req,res){
       const actor=requireUser(req);
       if(actor.role!=='owner') return fail(res,403,'OWNER_ONLY');
       // لا نعتمد على state هنا حتى لا تتعطل لوحة الحسابات إذا كانت قاعدة البيانات قديمة.
-      const rows=await sb('users?select=id,name,email,phone,role,created_at,updated_at&order=created_at.desc&limit=500');
+      const rows=await sb('users?select=id,name,email,phone,username,role,created_at,updated_at&order=created_at.desc&limit=500');
       return ok(res,{source:'supabase',total:Array.isArray(rows)?rows.length:0,users:(rows||[]).map(u=>({
-        id:u.id,name:u.name,email:u.email||'',phone:u.phone||'',role:u.role||'student',
+        id:u.id,name:u.name,email:u.email||'',phone:u.phone||'',username:u.username||'',role:u.role||'student',
         grade:'',branch:'',created_at:u.created_at,updated_at:u.updated_at
       }))});
     }
@@ -379,7 +390,7 @@ async function handler(req,res){
       await sb(`users?id=eq.${eq(target.id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({role,updated_at:now()})});
       await sb('notifications',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({title:'تم تحديث رتبتك',body:`تم تعيين رتبتك إلى ${role}.`,to_user_id:target.id,to_email:target.email||null,created_at:now()})});
       await audit(actor,'role_changed',{from_role:target.role,to_role:role,phone:target.phone||''},target);
-      return ok(res,{user:{id:target.id,name:target.name,phone:target.phone,email:target.email||'',role}});
+      return ok(res,{user:{id:target.id,name:target.name,phone:target.phone,email:target.email||'',username:target.username||'',role}});
     }
     if(action==='user_email' && method==='POST'){
       const actor=requireUser(req);
@@ -392,7 +403,7 @@ async function handler(req,res){
       const existing=await getStudentByEmail(e); if(existing && String(existing.id)!==String(target.id)) return fail(res,409,'EMAIL_EXISTS');
       await sb(`users?id=eq.${eq(target.id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({email:e,updated_at:now()})});
       await audit(actor,'email_changed',{email:e},target);
-      return ok(res,{user:{id:target.id,name:target.name,phone:target.phone,email:e,role:target.role}});
+      return ok(res,{user:{id:target.id,name:target.name,phone:target.phone,email:e,username:target.username||'',role:target.role}});
     }
     if(action==='user_delete' && method==='POST'){
       const actor=requireUser(req);
