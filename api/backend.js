@@ -1,502 +1,406 @@
 'use strict';
-
+// مُذاكرة — Vercel serverless API (Supabase REST). لا تضع أي مفتاح سري في الواجهة.
 const crypto = require('crypto');
 
-const SUPABASE_URL = String(process.env.SUPABASE_URL || '').replace(/\/$/, '');
-const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '');
-const SESSION_SECRET = String(process.env.SESSION_SECRET || (SUPABASE_SERVICE_ROLE_KEY ? crypto.createHash('sha256').update(SUPABASE_SERVICE_ROLE_KEY).digest('hex') : ''));
-const OWNER_EMAIL = String(process.env.OWNER_EMAIL || process.env.ADMIN_EMAIL || 'semos91100@gmail.com').trim().toLowerCase();
-const OWNER_PASSWORD = String(process.env.OWNER_PASSWORD || process.env.ADMIN_PASSWORD || 'alton112233');
-const OWNER_ACCOUNTS = [
-  { email: OWNER_EMAIL, name: 'ALTON', password: OWNER_PASSWORD },
-  // OWNER إضافي 1: اكتب البريد والاسم وكلمة المرور هنا أو استخدم OWNER_2_* في Vercel
-  { email: String(process.env.OWNER_2_EMAIL || '').trim().toLowerCase(), name: String(process.env.OWNER_2_NAME || 'OWNER 2').trim(), password: String(process.env.OWNER_2_PASSWORD || '') },
-  // OWNER إضافي 2: اكتب البريد والاسم وكلمة المرور هنا أو استخدم OWNER_3_* في Vercel
-  { email: String(process.env.OWNER_3_EMAIL || '').trim().toLowerCase(), name: String(process.env.OWNER_3_NAME || 'OWNER 3').trim(), password: String(process.env.OWNER_3_PASSWORD || '') }
-].filter(x => x.email && x.password);
-const OWNER_EMAILS = new Set(OWNER_ACCOUNTS.map(x => x.email));
-const ADMIN_EMAIL = OWNER_EMAIL;
-const GEMINI_API_KEY = String(process.env.GEMINI_API_KEY || '').trim();
-const GEMINI_MODEL = String(process.env.GEMINI_MODEL || 'gemini-3.8-flash').trim();
+const ROLES = ['student', 'support', 'moderator', 'admin', 'owner'];
+const rank = r => Math.max(0, ROLES.indexOf(r));
+const EDU_GRADES_SERVER = {
+  first: ['general'],
+  second: ['science', 'literary'],
+  third: ['science_biology', 'science_math', 'literary'],
+};
+const SAFE = ['id', 'name', 'email', 'phone', 'username', 'role', 'state', 'created_at'];
 
-const ROLE_LEVEL = Object.freeze({student:0, support:1, moderator:2, admin:3, owner:4});
-const STAFF_ROLES = new Set(['support','moderator','admin','owner']);
-const MANAGER_ROLES = new Set(['admin','owner']);
-const ALL_ROLES = new Set(Object.keys(ROLE_LEVEL));
+class HttpError extends Error {
+  constructor(status, code, message) { super(message); this.status = status; this.code = code; }
+}
+const fail = (s, c, m) => { throw new HttpError(s, c, m); };
 
-// تعريف المراحل والشعب على السيرفر نفسه حتى لا يفشل التسجيل بسبب اختلاف
-// بيانات الواجهة عن الـ API. القيم هنا مطابقة لـ assets/data.js.
-const EDU_GRADES_SERVER = Object.freeze({
-  first: { label: 'أولى ثانوي', branches: [{id:'general', label:'ثانوي عام — عام'}] },
-  second: { label: 'تانية ثانوي', branches: [{id:'science', label:'علمي'}, {id:'literary', label:'أدبي'}] },
-  third: { label: 'تالتة ثانوي', branches: [{id:'science_biology', label:'علمي علوم'}, {id:'science_math', label:'علمي رياضة'}, {id:'literary', label:'أدبي'}] }
-});
+/* ---------- Supabase REST ---------- */
+function cfg() {
+  const url = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
+  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  const secret = process.env.SESSION_SECRET || '';
+  if (!url || !key) fail(500, 'CONFIG_MISSING', 'إعدادات السيرفر ناقصة: أضف SUPABASE_URL و SUPABASE_SERVICE_ROLE_KEY في Vercel ثم اعمل Redeploy.');
+  if (secret.length < 8) fail(500, 'CONFIG_MISSING', 'أضف SESSION_SECRET (نص عشوائي طويل) في متغيرات Vercel ثم اعمل Redeploy.');
+  return { url, key, secret };
+}
 
-function configured(){ return !!(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY && SESSION_SECRET); }
-function send(res, status, data, extraHeaders={}){
-  Object.entries(extraHeaders).forEach(([k,v])=>res.setHeader(k,v));
-  res.status(status).json(data);
+async function sb(table, { method = 'GET', query = '', body, ret = false } = {}) {
+  const { url, key } = cfg();
+  let r;
+  try {
+    r = await fetch(`${url}/rest/v1/${table}${query ? '?' + query : ''}`, {
+      method,
+      headers: {
+        apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json',
+        ...(ret ? { Prefer: 'return=representation' } : {}),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (e) {
+    fail(502, 'DB_UNREACHABLE', 'تعذر الوصول إلى Supabase. راجع قيمة SUPABASE_URL في Vercel.');
+  }
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    const msg = String(j.message || j.error || j.hint || '');
+    if (j.code === '23505') {
+      const w = /phone/i.test(msg) ? 'رقم الموبايل' : /email/i.test(msg) ? 'البريد الإلكتروني' : 'اليوزر نيم';
+      fail(409, 'DUPLICATE', `${w} مستخدم من قبل.`);
+    }
+    if (['42P01', 'PGRST205', '42703', 'PGRST204'].includes(j.code) || /does not exist|schema cache/i.test(msg))
+      fail(500, 'SCHEMA_MISSING', 'قاعدة البيانات غير محدثة: شغّل ملف SUPABASE.sql كاملًا في Supabase SQL Editor (نفس المشروع المربوط بـ Vercel).');
+    if (r.status === 401 || r.status === 403 || /invalid api key|jwt/i.test(msg))
+      fail(500, 'DB_AUTH', 'مفتاح Supabase غير صحيح: تأكد أن SUPABASE_SERVICE_ROLE_KEY هو service_role وليس anon.');
+    fail(500, 'DB_ERROR', 'خطأ في قاعدة البيانات: ' + (msg || r.status));
+  }
+  if (r.status === 204) return null;
+  const t = await r.text();
+  return t ? JSON.parse(t) : null;
 }
-function now(){ return new Date().toISOString(); }
-function email(v){ return String(v || '').trim().toLowerCase(); }
-function username(v){ return String(v || '').trim().toLowerCase(); }
-function validUsername(v){ return /^[\p{L}\p{N}_.-]{3,30}$/u.test(String(v||'').trim()); }
-async function getStudentByUsername(v){ const u=username(v); let rows=await sb(`users?select=id,email,phone,username,name,password_hash,role,state,created_at,updated_at&username=eq.${eq(u)}&limit=1`); if(!rows?.[0]) rows=await sb(`users?select=id,email,phone,username,name,password_hash,role,state,created_at,updated_at&username=ilike.${eq(u)}&limit=1`); return rows?.[0]||null; }
-function normalizePhone(v){
-  let p=String(v||'').trim().replace(/[\s().-]/g,'');
-  if(p.startsWith('00')) p='+'+p.slice(2);
-  if(p.startsWith('+20')) p='+20'+p.slice(3).replace(/\D/g,'');
-  else if(/^01\d{9}$/.test(p)) p='+20'+p.slice(1);
-  else p=p.replace(/\D/g,'');
-  return p;
+const eq = (k, v) => `${k}=eq.${encodeURIComponent(v)}`;
+const find = async (table, filters, extra = '') =>
+  (await sb(table, { query: [...filters, extra].filter(Boolean).join('&') })) || [];
+const one = async (table, filters) => (await find(table, filters, 'limit=1'))[0] || null;
+const insert = async (table, row) => (await sb(table, { method: 'POST', body: row, ret: true }))[0];
+const patch = (table, filters, body) => sb(table, { method: 'PATCH', query: filters.join('&'), body });
+
+/* ---------- helpers ---------- */
+const pub = u => u && Object.fromEntries(SAFE.map(k => [k, u[k] ?? null]));
+const clean = (s, n = 500) => String(s ?? '').trim().slice(0, n);
+
+function phoneCore(p) {
+  const d = String(p || '').replace(/\D/g, '').replace(/^00/, '').replace(/^20/, '').replace(/^0/, '');
+  return /^1[0125]\d{8}$/.test(d) ? d : null;
 }
-function validPhone(v){ const p=normalizePhone(v); return /^\+?\d{10,15}$/.test(p); }
-function validEmail(v){ return !v || (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) && v.length <= 190); }
-function hashPassword(text){ return crypto.createHash('sha256').update(String(text)).digest('hex'); }
-function roleLevel(role){ return ROLE_LEVEL[String(role||'student')] ?? -1; }
-function isStaff(role){ return STAFF_ROLES.has(String(role||'')); }
-function isManager(role){ return MANAGER_ROLES.has(String(role||'')); }
-function canManageUsers(role){ return String(role||'') === 'owner'; }
-function canManageTicket(role){ return isStaff(role); }
-function signPayload(payload){
-  const raw = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const sig = crypto.createHmac('sha256', SESSION_SECRET).update(raw).digest('base64url');
-  return `${raw}.${sig}`;
+const phoneVariants = p => { const c = phoneCore(p); return c ? ['0' + c, '20' + c, '+20' + c, c] : []; };
+const canonPhone = p => { const c = phoneCore(p); return c ? '0' + c : null; };
+const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+
+function hashPw(pw) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  return `s1$${salt}$${crypto.scryptSync(pw, salt, 32).toString('hex')}`;
 }
-function verifySession(token){
-  try{
-    if(!token) return null;
-    const [raw,sig] = String(token).split('.');
-    if(!raw || !sig) return null;
-    const expected = crypto.createHmac('sha256', SESSION_SECRET).update(raw).digest('base64url');
-    if(sig.length!==expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
-    const payload = JSON.parse(Buffer.from(raw,'base64url').toString('utf8'));
-    if(!payload || !payload.exp || payload.exp < Date.now()) return null;
-    return payload;
-  }catch(_){ return null; }
+function checkPw(pw, stored) {
+  const [v, salt, h] = String(stored || '').split('$');
+  if (v !== 's1' || !salt || !h) return false;
+  const a = Buffer.from(crypto.scryptSync(String(pw), salt, 32).toString('hex'));
+  const b = Buffer.from(h);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
-function cookieValue(req,name){
-  const c = String(req.headers.cookie || '');
-  const m = c.split(';').map(x=>x.trim()).find(x=>x.startsWith(name+'='));
-  return m ? decodeURIComponent(m.slice(name.length+1)) : '';
+const safeEq = (a, b) => {
+  const x = Buffer.from(String(a)), y = Buffer.from(String(b));
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+};
+
+/* ---------- session ---------- */
+const b64 = b => Buffer.from(b).toString('base64url');
+function signToken(uid) {
+  const p = b64(JSON.stringify({ uid, exp: Date.now() + 30 * 864e5 }));
+  return `${p}.${crypto.createHmac('sha256', cfg().secret).update(p).digest('base64url')}`;
 }
-function sessionUser(req){ return verifySession(cookieValue(req,'mozakra_session')); }
-function secureRequest(req){
-  const proto=String(req?.headers?.['x-forwarded-proto']||req?.headers?.['x-forwarded-protocol']||'').split(',')[0].trim().toLowerCase();
-  return proto==='https' || !!req?.socket?.encrypted;
+function readToken(tok) {
+  const [p, s] = String(tok || '').split('.');
+  if (!p || !s) return null;
+  const good = crypto.createHmac('sha256', cfg().secret).update(p).digest('base64url');
+  if (!safeEq(s, good)) return null;
+  try { const o = JSON.parse(Buffer.from(p, 'base64url').toString()); return o.exp > Date.now() ? o : null; } catch { return null; }
 }
-function cookieAttrs(req, maxAge){ return `Path=/; HttpOnly; ${secureRequest(req)?'Secure; ':''}SameSite=Lax; Max-Age=${maxAge}`; }
-function setSession(res, user, req){
-  const token = signPayload({id:String(user.id),email:user.email||'',phone:user.phone||'',role:user.role,name:user.name,exp:Date.now()+1000*60*60*24*30});
-  res.setHeader('Set-Cookie', `mozakra_session=${encodeURIComponent(token)}; ${cookieAttrs(req,2592000)}`);
+function cookieOf(req, name) {
+  const m = String(req.headers.cookie || '').split(/;\s*/).find(c => c.startsWith(name + '='));
+  return m ? decodeURIComponent(m.slice(name.length + 1)) : '';
 }
-function clearSession(res,req){ res.setHeader('Set-Cookie',`mozakra_session=; ${cookieAttrs(req,0)}`); }
-async function readBody(req){
-  if(req.body && typeof req.body === 'object') return req.body;
-  return await new Promise(resolve=>{
-    let raw=''; req.on('data',c=>raw+=c); req.on('end',()=>{ try{ resolve(raw?JSON.parse(raw):{}); }catch(_){ resolve({}); } });
+const isHttps = req => String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+function setCookie(req, res, value, maxAge) {
+  res.setHeader('Set-Cookie', `mz_session=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${isHttps(req) ? '; Secure' : ''}`);
+}
+async function sessionUser(req) {
+  const t = readToken(cookieOf(req, 'mz_session'));
+  return t ? await one('users', [eq('id', t.uid)]) : null;
+}
+const need = (u, minRole) => {
+  if (!u) fail(401, 'AUTH_REQUIRED', 'سجّل الدخول أولًا.');
+  if (minRole && rank(u.role) < rank(minRole)) fail(403, 'FORBIDDEN', 'ليس لديك صلاحية لهذا الإجراء.');
+  return u;
+};
+
+/* ---------- owners from env ---------- */
+function owners() {
+  const list = [];
+  for (const [e, n, p, dn] of [
+    ['OWNER_EMAIL', 'OWNER_NAME', 'OWNER_PASSWORD', 'ALTON'],
+    ['OWNER_2_EMAIL', 'OWNER_2_NAME', 'OWNER_2_PASSWORD', 'OWNER 2'],
+    ['OWNER_3_EMAIL', 'OWNER_3_NAME', 'OWNER_3_PASSWORD', 'OWNER 3'],
+  ]) {
+    const email = clean(process.env[e]).toLowerCase(), pass = process.env[p] || '';
+    if (email && pass) list.push({ email, pass, name: clean(process.env[n]) || dn });
+  }
+  return list;
+}
+async function ensureOwnerRow(o) {
+  let u = await one('users', [eq('email', o.email)]);
+  if (!u) return insert('users', { email: o.email, name: o.name, role: 'owner', password_hash: hashPw(o.pass), state: { onboarded: true } });
+  const upd = {};
+  if (u.role !== 'owner') upd.role = 'owner';
+  if (!checkPw(o.pass, u.password_hash)) upd.password_hash = hashPw(o.pass);
+  if (Object.keys(upd).length) { await patch('users', [eq('id', u.id)], upd); u = { ...u, ...upd }; }
+  return u;
+}
+
+/* ---------- audit ---------- */
+async function audit(actor, action, target, details = {}) {
+  try {
+    await insert('audit_logs', {
+      actor_user_id: actor?.id ?? null, actor_name: actor?.name || 'زائر', actor_role: actor?.role || 'guest',
+      action, target_user_id: target?.id ?? null, target_name: target?.name ?? null, details,
+    });
+  } catch { /* السجل لا يجب أن يكسر العملية */ }
+}
+
+/* ---------- lookup ---------- */
+async function findByIdentifier(idf) {
+  const s = clean(idf, 120);
+  if (!s) return null;
+  if (s.includes('@')) return (await one('users', [eq('email', s)])) || (await one('users', [eq('email', s.toLowerCase())]));
+  for (const v of phoneVariants(s)) { const u = await one('users', [eq('phone', v)]); if (u) return u; }
+  return (await one('users', [eq('username', s)])) || (await one('users', [eq('username', s.toLowerCase())]));
+}
+
+/* ---------- actions ---------- */
+const A = {};
+
+A.health = async () => ({ ok: true, time: new Date().toISOString() });
+
+A.me = async (req) => ({ ok: true, user: pub(await sessionUser(req)) });
+
+A.login = async (req, res, b) => {
+  const idf = clean(b.identifier || b.phone || b.email || b.username, 120);
+  const pw = String(b.password ?? '');
+  if (!idf || !pw) fail(400, 'MISSING_FIELDS', 'اكتب رقم الموبايل أو البريد أو اليوزر نيم وكلمة المرور.');
+  const own = owners().find(o => o.email === idf.toLowerCase());
+  let user;
+  if (own) {
+    if (!safeEq(pw, own.pass)) fail(401, 'INVALID_CREDENTIALS', 'بيانات الدخول غير صحيحة.');
+    user = await ensureOwnerRow(own);
+  } else {
+    user = await findByIdentifier(idf);
+    if (!user || !checkPw(pw, user.password_hash)) fail(401, 'INVALID_CREDENTIALS', 'بيانات الدخول غير صحيحة.');
+  }
+  setCookie(req, res, signToken(user.id), 30 * 864e2);
+  await audit(user, 'login');
+  return { ok: true, user: pub(user) };
+};
+
+A.signup = async (req, res, b) => {
+  const name = clean(b.name, 80), username = clean(b.username, 30).toLowerCase(), pw = String(b.password ?? '');
+  const phone = canonPhone(b.phone), grade = clean(b.grade, 20), branch = clean(b.branch, 30);
+  if (name.length < 2) fail(400, 'BAD_NAME', 'اكتب اسمك.');
+  if (!/^[a-z0-9_.]{3,20}$/.test(username)) fail(400, 'BAD_USERNAME', 'اليوزر نيم 3–20 حرفًا إنجليزيًا أو أرقامًا أو _ أو .');
+  if (!phone) fail(400, 'BAD_PHONE', 'رقم الموبايل المصري غير صحيح.');
+  if (pw.length < 6) fail(400, 'BAD_PASSWORD', 'كلمة المرور 6 أحرف على الأقل.');
+  if (!EDU_GRADES_SERVER[grade]?.includes(branch)) fail(400, 'BAD_TRACK', 'اختر الصف والشعبة.');
+  for (const v of phoneVariants(phone)) if (await one('users', [eq('phone', v)])) fail(409, 'DUPLICATE', 'رقم الموبايل مستخدم من قبل.');
+  if (await one('users', [eq('username', username)])) fail(409, 'DUPLICATE', 'اليوزر نيم مستخدم من قبل.');
+  const user = await insert('users', {
+    name, username, phone, role: 'student', password_hash: hashPw(pw),
+    state: { grade, branch, onboarded: true },
   });
+  setCookie(req, res, signToken(user.id), 30 * 864e2);
+  await audit(user, 'signup');
+  return { ok: true, user: pub(user) };
+};
+
+A.logout = async (req, res) => {
+  const u = await sessionUser(req).catch(() => null);
+  setCookie(req, res, '', 0);
+  if (u) await audit(u, 'logout');
+  return { ok: true };
+};
+
+A.savestate = async (req, res, b) => {
+  const u = need(await sessionUser(req));
+  const st = { ...(u.state || {}), ...(typeof b.state === 'object' && b.state ? b.state : {}) };
+  const g = st.grade, br = st.branch;
+  if (g && !EDU_GRADES_SERVER[g]?.includes(br)) fail(400, 'BAD_TRACK', 'الصف أو الشعبة غير صحيحين.');
+  await patch('users', [eq('id', u.id)], { state: st, updated_at: new Date().toISOString() });
+  return { ok: true, state: st };
+};
+
+A.accounts = async (req) => {
+  need(await sessionUser(req), 'owner');
+  const rows = await find('users', [], 'order=created_at.desc');
+  return { ok: true, accounts: rows.map(pub) };
+};
+
+async function targetUser(b) {
+  const u = b.user_id != null ? await one('users', [eq('id', b.user_id)]) : await findByIdentifier(b.phone || b.email || b.username);
+  if (!u) fail(404, 'NOT_FOUND', 'الحساب غير موجود.');
+  return u;
 }
-async function sb(path, opts={}){
-  if(!configured()) throw Object.assign(new Error('BACKEND_NOT_CONFIGURED'),{code:'BACKEND_NOT_CONFIGURED'});
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    ...opts,
-    headers:{
-      apikey:SUPABASE_SERVICE_ROLE_KEY,
-      Authorization:`Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      'Content-Type':'application/json',
-      ...(opts.headers||{})
-    }
+A.setrole = async (req, res, b) => {
+  const me = need(await sessionUser(req), 'owner');
+  const t = await targetUser(b), role = clean(b.role, 20);
+  if (t.role === 'owner') fail(403, 'OWNER_PROTECTED', 'لا يمكن تغيير رتبة OWNER.');
+  if (!ROLES.includes(role) || role === 'owner') fail(400, 'BAD_ROLE', 'رتبة غير صحيحة.');
+  await patch('users', [eq('id', t.id)], { role, updated_at: new Date().toISOString() });
+  await insert('notifications', { title: 'تم تغيير رتبتك', body: `رتبتك الآن: ${role.toUpperCase()}`, to_user_id: t.id });
+  await audit(me, 'set_role', t, { from: t.role, to: role });
+  return { ok: true };
+};
+A.setemail = async (req, res, b) => {
+  const me = need(await sessionUser(req), 'owner');
+  const t = await targetUser(b), email = clean(b.email, 120).toLowerCase();
+  if (t.role === 'owner') fail(403, 'OWNER_PROTECTED', 'حساب OWNER محمي.');
+  if (email && !validEmail(email)) fail(400, 'BAD_EMAIL', 'البريد الإلكتروني غير صحيح.');
+  if (email) { const x = await one('users', [eq('email', email)]); if (x && x.id !== t.id) fail(409, 'DUPLICATE', 'البريد مستخدم من قبل.'); }
+  await patch('users', [eq('id', t.id)], { email: email || null, updated_at: new Date().toISOString() });
+  await audit(me, 'set_email', t, { email });
+  return { ok: true };
+};
+A.deleteaccount = async (req, res, b) => {
+  const me = need(await sessionUser(req), 'owner');
+  const t = await targetUser(b);
+  if (t.role === 'owner') fail(403, 'OWNER_PROTECTED', 'لا يمكن حذف حساب OWNER.');
+  await sb('users', { method: 'DELETE', query: eq('id', t.id) });
+  await audit(me, 'delete_account', t);
+  return { ok: true };
+};
+
+A.notify = async (req, res, b) => {
+  const me = need(await sessionUser(req), 'admin');
+  const title = clean(b.title, 120), body = clean(b.body, 1000), to = clean(b.target || b.to || 'all', 120);
+  if (!title) fail(400, 'MISSING_FIELDS', 'اكتب عنوان الإشعار.');
+  let row = { title, body };
+  if (to === 'all' || to === 'staff') row.to_role = to;
+  else { const t = await findByIdentifier(to); if (!t) fail(404, 'NOT_FOUND', 'لا يوجد طالب بهذا الرقم/البريد.'); row.to_user_id = t.id; }
+  await insert('notifications', row);
+  await audit(me, 'notify', null, { to, title });
+  return { ok: true };
+};
+A.notifications = async (req) => {
+  const u = need(await sessionUser(req));
+  const parts = [find('notifications', [eq('to_user_id', u.id)]), find('notifications', [eq('to_role', 'all')])];
+  if (rank(u.role) >= 1) parts.push(find('notifications', [eq('to_role', 'staff')]));
+  const rows = (await Promise.all(parts)).flat().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  return { ok: true, notifications: rows.slice(0, 100) };
+};
+
+const tid = () => 'T' + Date.now().toString(36).toUpperCase() + crypto.randomBytes(2).toString('hex').toUpperCase();
+A.ticketcreate = async (req, res, b) => {
+  const u = need(await sessionUser(req));
+  if (u.role !== 'student' && u.role !== 'owner') fail(403, 'FORBIDDEN', 'فتح التذاكر للطلاب فقط.');
+  const subject = clean(b.subject, 150), text = clean(b.text || b.message, 3000);
+  if (!subject || !text) fail(400, 'MISSING_FIELDS', 'اكتب عنوان المشكلة وتفاصيلها.');
+  const t = await insert('tickets', {
+    id: tid(), user_id: u.id, user_name: u.name, user_email: u.email || null, subject,
+    category: clean(b.category, 30) || 'other', priority: 'medium', status: 'open', assigned_role: 'support',
   });
-  const text = await r.text();
-  let data=null; try{ data=text?JSON.parse(text):null; }catch(_){ data=text; }
-  if(!r.ok){
-    const e=new Error(typeof data==='string'?data:(data?.message||'SUPABASE_ERROR'));
-    e.status=r.status; e.data=data; throw e;
+  await insert('ticket_messages', { ticket_id: t.id, from_role: u.role, author_name: u.name, text });
+  await audit(u, 'ticket_create', null, { id: t.id });
+  return { ok: true, ticket: t };
+};
+A.tickets = async (req) => {
+  const u = need(await sessionUser(req));
+  const rows = await find('tickets', rank(u.role) >= 1 && u.role !== 'student' ? [] : [eq('user_id', u.id)], 'order=updated_at.desc');
+  return { ok: true, tickets: rows };
+};
+async function loadTicket(u, id) {
+  const t = await one('tickets', [eq('id', clean(id, 40))]);
+  if (!t) fail(404, 'NOT_FOUND', 'التذكرة غير موجودة.');
+  const staff = rank(u.role) >= 1;
+  if (!staff && t.user_id !== u.id) fail(403, 'FORBIDDEN', 'هذه التذكرة ليست لك.');
+  return t;
+}
+A.ticketget = async (req, res, b) => {
+  const u = need(await sessionUser(req)), t = await loadTicket(u, b.id);
+  return { ok: true, ticket: t, messages: await find('ticket_messages', [eq('ticket_id', t.id)], 'order=created_at.asc') };
+};
+A.ticketreply = async (req, res, b) => {
+  const u = need(await sessionUser(req)), t = await loadTicket(u, b.id), text = clean(b.text, 3000);
+  if (!text) fail(400, 'MISSING_FIELDS', 'اكتب الرد.');
+  await insert('ticket_messages', { ticket_id: t.id, from_role: u.role, author_name: u.name, text });
+  await patch('tickets', [eq('id', t.id)], { updated_at: new Date().toISOString() });
+  if (t.user_id !== u.id) await insert('notifications', { title: 'رد جديد على تذكرتك', body: t.subject, to_user_id: t.user_id });
+  await audit(u, 'ticket_reply', null, { id: t.id });
+  return { ok: true };
+};
+A.ticketupdate = async (req, res, b) => {
+  const u = need(await sessionUser(req), 'support'), t = await loadTicket(u, b.id);
+  const upd = { updated_at: new Date().toISOString() };
+  if (['open', 'pending', 'resolved', 'closed'].includes(b.status)) upd.status = b.status;
+  if (['low', 'medium', 'high', 'urgent'].includes(b.priority)) upd.priority = b.priority;
+  await patch('tickets', [eq('id', t.id)], upd);
+  await audit(u, 'ticket_update', null, { id: t.id, ...upd });
+  return { ok: true };
+};
+
+A.adminchat = async (req) => {
+  need(await sessionUser(req), 'support');
+  const rows = await find('admin_chat_messages', [], 'order=created_at.desc&limit=200');
+  return { ok: true, messages: rows.reverse() };
+};
+A.adminchatsend = async (req, res, b) => {
+  const u = need(await sessionUser(req), 'support'), text = clean(b.text, 2000);
+  if (!text) fail(400, 'MISSING_FIELDS', 'اكتب رسالة.');
+  await insert('admin_chat_messages', { user_id: u.id, author_name: u.name, author_role: u.role, text });
+  await audit(u, 'admin_chat_send');
+  return { ok: true };
+};
+
+A.auditlogs = async (req) => {
+  need(await sessionUser(req), 'owner');
+  return { ok: true, logs: await find('audit_logs', [], 'order=created_at.desc&limit=300') };
+};
+
+A.sitecontent = async () => {
+  const r = await one('site_content', [eq('id', 1)]);
+  return { ok: true, teachers: r?.teachers || [], removed: r?.removed || [] };
+};
+A.sitecontentsave = async (req, res, b) => {
+  const u = need(await sessionUser(req), 'admin');
+  const row = { teachers: Array.isArray(b.teachers) ? b.teachers : [], removed: Array.isArray(b.removed) ? b.removed : [], updated_at: new Date().toISOString() };
+  if (await one('site_content', [eq('id', 1)])) await patch('site_content', [eq('id', 1)], row);
+  else await insert('site_content', { id: 1, ...row });
+  await audit(u, 'site_content_save');
+  return { ok: true };
+};
+
+A.dbhealth = async (req) => {
+  need(await sessionUser(req), 'owner');
+  const out = {};
+  for (const t of ['users', 'site_content', 'notifications', 'tickets', 'ticket_messages', 'admin_chat_messages', 'audit_logs']) {
+    try { await sb(t, { query: 'select=*&limit=1' }); out[t] = 'ok'; } catch (e) { out[t] = e.code || 'error'; }
   }
-  return data;
-}
-function eq(v){ return encodeURIComponent(String(v)); }
-function requireUser(req){ const u=sessionUser(req); if(!u) throw Object.assign(new Error('AUTH_REQUIRED'),{code:'AUTH_REQUIRED',status:401}); return u; }
-function requireStaff(req){ const u=requireUser(req); if(!isStaff(u.role)) throw Object.assign(new Error('FORBIDDEN'),{code:'FORBIDDEN',status:403}); return u; }
-function requireManager(req){ const u=requireUser(req); if(!isManager(u.role)) throw Object.assign(new Error('FORBIDDEN'),{code:'FORBIDDEN',status:403}); return u; }
-function ok(res,data={}){ send(res,200,{ok:true,...data}); }
-function fail(res,status,error){ send(res,status,{ok:false,error}); }
-function safeUser(u){ return u ? {id:u.id,email:u.email||'',phone:u.phone||'',username:u.username||'',name:u.name||'طالب',role:u.role||'student'} : null; }
-function targetEmailOrAll(to){ return email(to||'all'); }
+  try { await sb('users', { query: 'select=username&limit=1' }); out.users_username = 'ok'; } catch (e) { out.users_username = e.code || 'error'; }
+  return { ok: Object.values(out).every(v => v === 'ok'), tables: out, env: { url: !!process.env.SUPABASE_URL, key: !!process.env.SUPABASE_SERVICE_ROLE_KEY, secret: !!process.env.SESSION_SECRET, gemini: !!process.env.GEMINI_API_KEY } };
+};
 
-// سجل نشاط مركزي يراه الـ OWNER فقط. لا نضع كلمات مرور أو مفاتيح جلسات داخل السجل.
-async function audit(actor, action, details={}, target=null){
-  try{
-    await sb('audit_logs',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({
-      actor_user_id: actor?.id ? actor.id : null,
-      actor_name: actor?.name || 'زائر',
-      actor_role: actor?.role || 'guest',
-      action: String(action||'').slice(0,80),
-      target_user_id: target?.id ? target.id : null,
-      target_name: target?.name || null,
-      details: details && typeof details==='object' ? details : {message:String(details||'')},
-      created_at: now()
-    })});
-  }catch(_){ /* السجل لا يعطّل العملية الأساسية إذا كانت قاعدة السجل غير مهيأة */ }
-}
-async function auditLogin(user){ return audit(user,'login_success'); }
+A.ai = async (req, res, b) => {
+  need(await sessionUser(req));
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) fail(503, 'AI_NOT_CONFIGURED', 'المدرس الذكي غير مفعّل بعد.');
+  const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${key}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: clean(b.prompt || b.message, 4000) }] }] }),
+  }).catch(() => null);
+  if (!r || !r.ok) fail(502, 'AI_ERROR', 'تعذر الاتصال بخدمة الذكاء الاصطناعي.');
+  const j = await r.json();
+  return { ok: true, text: j.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '' };
+};
 
-async function getStudentById(id){
-  const rows=await sb(`users?select=id,email,phone,username,name,password_hash,role,state,created_at,updated_at&id=eq.${eq(id)}&limit=1`);
-  return rows?.[0]||null;
-}
-async function getUserById(id){
-  const rows=await sb(`users?select=id,email,phone,username,name,password_hash,role,state,created_at,updated_at&id=eq.${eq(id)}&limit=1`);
-  return rows?.[0]||null;
-}
-async function getStudentByEmail(e){
-  const v=email(e);
-  let rows=await sb(`users?select=id,email,phone,username,name,password_hash,role,state,created_at,updated_at&email=eq.${eq(v)}&limit=1`);
-  if(!rows?.[0]) rows=await sb(`users?select=id,email,phone,username,name,password_hash,role,state,created_at,updated_at&email=ilike.${eq(v)}&limit=1`);
-  return rows?.[0]||null;
-}
-function phoneVariants(v){
-  const raw=String(v||'').trim();
-  const digits=raw.replace(/\D/g,'');
-  const normalized=normalizePhone(raw);
-  const out=new Set([normalized, raw, digits]);
-  if(digits.startsWith('20') && digits.length===12) out.add('0'+digits.slice(2));
-  if(digits.startsWith('01') && digits.length===11) out.add('+20'+digits.slice(1));
-  if(normalized.startsWith('+20') && normalized.length===13) out.add(normalized.slice(1));
-  return [...out].filter(Boolean);
-}
-async function getStudentByPhone(p){
-  for(const variant of phoneVariants(p)){
-    const rows=await sb(`users?select=id,email,phone,username,name,password_hash,role,state,created_at,updated_at&phone=eq.${eq(variant)}&limit=1`);
-    if(rows?.[0]) return rows[0];
+/* ---------- entry ---------- */
+module.exports = async function handler(req, res) {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const b = (req.body && typeof req.body === 'object') ? req.body : {};
+    const name = String(req.query?.action || b.action || 'health').replace(/[^a-z]/gi, '').toLowerCase();
+    const fn = A[name];
+    if (!fn) fail(404, 'UNKNOWN_ACTION', 'إجراء غير معروف: ' + name);
+    return res.status(200).json(await fn(req, res, b));
+  } catch (e) {
+    if (e instanceof HttpError) return res.status(e.status).json({ ok: false, error: e.code, message: e.message });
+    console.error(e);
+    return res.status(500).json({ ok: false, error: 'SERVER_ERROR', message: 'حدث خطأ غير متوقع في السيرفر.' });
   }
-  return null;
-}
-
-async function ensureOwnerUser(owner=OWNER_ACCOUNTS[0]){
-  let u=await getStudentByEmail(owner.email);
-  if(u){
-    if(u.role!=='owner'){
-      await sb(`users?id=eq.${eq(u.id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({role:'owner',name:u.name||owner.name||'OWNER',updated_at:now()})});
-      u={...u,role:'owner'};
-    }
-    return u;
-  }
-  const inserted=await sb('users',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({email:owner.email,phone:null,name:owner.name||'OWNER',role:'owner',password_hash:hashPassword(owner.password),state:{},created_at:now(),updated_at:now()})});
-  return inserted?.[0]||null;
-}
-async function findUser(identifier, method='auto'){
-  const raw=String(identifier||'').trim();
-  if(method==='email' || (method==='auto' && raw.includes('@'))) return getStudentByEmail(email(raw));
-  if(method==='phone' || (method==='auto' && /^\+?\d/.test(raw))) return getStudentByPhone(raw);
-  if(method==='username') return getStudentByUsername(raw);
-  return getStudentByUsername(raw);
-}
-
-async function ticketWithMessages(id){
-  const rows=await sb(`tickets?select=id,user_id,user_name,user_email,subject,category,priority,status,created_at,updated_at&id=eq.${eq(id)}&limit=1`);
-  const t=rows?.[0]; if(!t) return null;
-  const msgs=await sb(`ticket_messages?select=id,ticket_id,from_role,author_name,text,created_at&ticket_id=eq.${eq(id)}&order=created_at.asc`);
-  return {...t,messages:(msgs||[]).map(m=>({id:m.id,from:m.from_role,authorName:m.author_name,text:m.text,at:m.created_at}))};
-}
-async function geminiGenerate(messages, context=''){
-  if(!GEMINI_API_KEY) throw Object.assign(new Error('AI_NOT_CONFIGURED'),{code:'AI_NOT_CONFIGURED',status:503});
-  const safeMessages=Array.isArray(messages)?messages.slice(-10).map(m=>({role:m?.role==='model'?'model':'user',parts:[{text:String(m?.content||'').slice(0,4000)}]})).filter(x=>x.parts[0].text):[];
-  if(!safeMessages.length) throw Object.assign(new Error('EMPTY_MESSAGE'),{code:'EMPTY_MESSAGE',status:422});
-  const systemInstruction={parts:[{text:`أنت مدرس مساعد لمنصة مُذاكرة الثانوية العامة في مصر. اشرح بالعربية المصرية ببساطة، ولا تعطِ إجابات غش لاختبارات جارية. سياق الطالب: ${String(context||'').slice(0,2000)}`}]};
-  const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent`,{
-    method:'POST', headers:{'x-goog-api-key':GEMINI_API_KEY,'Content-Type':'application/json'},
-    body:JSON.stringify({system_instruction:systemInstruction,contents:safeMessages,generationConfig:{temperature:0.6,maxOutputTokens:900}})
-  });
-  const raw=await r.text(); let data=null; try{data=raw?JSON.parse(raw):null}catch(_){data=null}
-  if(!r.ok){ const e=new Error('AI_REQUEST_FAILED'); e.code='AI_REQUEST_FAILED'; e.status=r.status; throw e; }
-  const text=(data?.candidates?.[0]?.content?.parts||[]).map(x=>x?.text||'').join('\n').trim();
-  if(!text) throw Object.assign(new Error('AI_EMPTY_RESPONSE'),{code:'AI_EMPTY_RESPONSE',status:502});
-  return text.slice(0,12000);
-}
-function flattenTicket(t){
-  const msgs=t.messages||[];
-  const first=msgs.find(m=>m.from==='student')||msgs[0];
-  const lastAdmin=[...msgs].reverse().find(m=>m.from!=='student');
-  return {id:t.id,uid:t.user_id,email:t.user_email,name:t.user_name,message:first?.text||'',reply:lastAdmin?.text||null,status:t.status,created_at:Math.floor(new Date(t.created_at).getTime()/1000),replied_at:lastAdmin?Math.floor(new Date(lastAdmin.at).getTime()/1000):null};
-}
-
-async function handler(req,res){
-  res.setHeader('Cache-Control','no-store');
-  const action=String(req.query.action||'');
-  const method=String(req.method||'GET').toUpperCase();
-  const body=await readBody(req);
-  if(!configured()) return fail(res,503,'BACKEND_NOT_CONFIGURED');
-
-  try{
-    if(action==='health' && method==='GET'){
-      const rows=await sb('users?select=id&limit=1');
-      return ok(res,{database:'ok',usersTable:'ok',timestamp:now(),countHint:Array.isArray(rows)?rows.length:0});
-    }
-    if(action==='me'){
-      const u=sessionUser(req); return ok(res,{authenticated:!!u,user:u||undefined});
-    }
-    if(action==='ai' && method==='POST'){
-      requireUser(req);
-      const messages=Array.isArray(body.messages)?body.messages:[];
-      const context=String(body.context||'');
-      const text=await geminiGenerate(messages,context);
-      await audit(sessionUser(req),'ai_message',{chars:text.length});
-      return ok(res,{text});
-    }
-    if(action==='login' && method==='POST'){
-      const identifier=String(body.identifier||body.phone||body.email||body.username||'').trim();
-      const pass=String(body.password||'');
-      const loginMethod=String(body.loginMethod||'auto').toLowerCase();
-      if(!identifier) return fail(res,422,'LOGIN_FAILED');
-      const e=email(identifier);
-      if((loginMethod==='email' || (loginMethod==='auto' && e.includes('@'))) && e && OWNER_EMAILS.has(e)){
-        const ownerCfg=OWNER_ACCOUNTS.find(x=>x.email===e);
-        if(!ownerCfg || pass!==ownerCfg.password) return fail(res,401,'LOGIN_FAILED');
-        const owner=await ensureOwnerUser(ownerCfg);
-        if(!owner) return fail(res,500,'SERVER_ERROR');
-        const safe=safeUser({...owner,role:'owner',email:ownerCfg.email,name:ownerCfg.name||owner.name||'OWNER'});
-        setSession(res,safe,req); await audit(safe,'login_success',{method:'owner_email'}); return ok(res,{authenticated:true,user:safe});
-      }
-      if(!['phone','email','username','auto'].includes(loginMethod)) return fail(res,422,'LOGIN_FAILED');
-      if(loginMethod==='email' && !e.includes('@')) return fail(res,422,'INVALID_EMAIL');
-      if(loginMethod==='phone' && !validPhone(identifier)) return fail(res,422,'INVALID_PHONE');
-      if(loginMethod==='username' && !validUsername(identifier)) return fail(res,422,'INVALID_USERNAME');
-      const u=await findUser(identifier,loginMethod);
-      if(!u || u.password_hash!==hashPassword(pass)) return fail(res,401,'LOGIN_FAILED');
-      const safe=safeUser(u); setSession(res,safe,req); await audit(safe,'login_success',{method:loginMethod==='auto'?(e?'email':validPhone(identifier)?'phone':'username'):loginMethod}); return ok(res,{authenticated:true,user:safe});
-    }
-    if(action==='signup' && method==='POST'){
-      const p=normalizePhone(body.phone), pass=String(body.password||''), name=String(body.name||'').trim().slice(0,120), un=username(body.username);
-      const grade=EDU_GRADES_SERVER[String(body.grade||'')] ? String(body.grade) : 'third';
-      const validBranches=EDU_GRADES_SERVER[grade]?.branches||[];
-      const branch=validBranches.some(x=>x.id===String(body.branch||'')) ? String(body.branch) : (validBranches[0]?.id||'science_biology');
-      if(!name) return fail(res,422,'NAME_REQUIRED');
-      if(!validUsername(un)) return fail(res,422,'INVALID_USERNAME');
-      if(!validPhone(p)) return fail(res,422,'INVALID_PHONE');
-      if(pass.length<8) return fail(res,422,'PASSWORD_SHORT');
-      if(pass.length>200) return fail(res,422,'PASSWORD_LONG');
-      const byUsername=await getStudentByUsername(un); if(byUsername) return fail(res,409,'USERNAME_EXISTS');
-      const byPhone=await getStudentByPhone(p); if(byPhone) return fail(res,409,'PHONE_EXISTS');
-      const inserted=await sb('users',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({email:null,phone:p,username:un,name:name||'طالب',role:'student',password_hash:hashPassword(pass),state:{name:name||'طالب',username:un,grade,branch,onboarded:true},created_at:now(),updated_at:now()})});
-      const u=inserted[0], safe=safeUser(u); setSession(res,safe,req); await audit(safe,'signup',{role:'student',username:un}); return ok(res,{authenticated:true,user:safe});
-    }
-    if(action==='logout' && method==='POST'){ const u=sessionUser(req); if(u) await audit(u,'logout'); clearSession(res,req); return ok(res); }
-    if(action==='state'){
-      const u=requireUser(req); if(isStaff(u.role)) return ok(res,{state:{},updated:Date.now()});
-      const row=await getStudentById(u.id); if(!row) return fail(res,401,'AUTH_REQUIRED');
-      if(method==='GET') return ok(res,{state:row.state||{},updated:row.updated_at||0});
-      if(method==='POST'){
-        if(!body.state || typeof body.state!=='object') return fail(res,422,'BAD_STATE');
-        await sb(`users?id=eq.${eq(u.id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({state:body.state,name:String(body.state.name||row.name||'طالب').slice(0,120),updated_at:now()})});
-        return ok(res,{updated:Date.now()});
-      }
-    }
-    if(action==='content'){
-      if(method==='GET'){
-        const rows=await sb('site_content?select=id,teachers,removed&id=eq.1&limit=1');
-        const c=rows?.[0]||{teachers:[],removed:[]}; return ok(res,{content:{teachers:c.teachers||[],removed:c.removed||[]}});
-      }
-      requireManager(req); if(method==='POST'){
-        const teachers=Array.isArray(body.teachers)?body.teachers:[], removed=Array.isArray(body.removed)?body.removed:[];
-        const exists=await sb('site_content?select=id&id=eq.1&limit=1');
-        if(exists?.length) await sb('site_content?id=eq.1',{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({teachers,removed,updated_at:now()})});
-        else await sb('site_content',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({id:1,teachers,removed,updated_at:now()})});
-        return ok(res);
-      }
-    }
-    if(action==='notifications'){
-      const u=requireUser(req);
-      if(method==='GET'){
-        // استخدم استعلامات منفصلة بدل OR المركب حتى لا تعتمد القراءة على صياغة PostgREST OR.
-        const queries=[
-          `notifications?select=id,title,body,to_email,to_user_id,to_role,created_at&to_role=eq.all&order=created_at.desc&limit=100`,
-          `notifications?select=id,title,body,to_email,to_user_id,to_role,created_at&to_user_id=eq.${eq(u.id)}&order=created_at.desc&limit=100`
-        ];
-        if(u.email) queries.push(`notifications?select=id,title,body,to_email,to_user_id,to_role,created_at&to_email=eq.${eq(u.email)}&order=created_at.desc&limit=100`);
-        if(isStaff(u.role)) queries.push(`notifications?select=id,title,body,to_email,to_user_id,to_role,created_at&to_role=eq.staff&order=created_at.desc&limit=100`);
-        const groups=await Promise.all(queries.map(q=>sb(q)));
-        const map=new Map(); for(const group of groups) for(const n of (group||[])) map.set(String(n.id),n);
-        const rows=[...map.values()].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).slice(0,100);
-        return ok(res,{notifications:rows.map(n=>({id:n.id,title:n.title,body:n.body,to:n.to_role==='staff'?'all-admins':(n.to_role==='all'?'all':(n.to_email||'user')),created_at:Math.floor(new Date(n.created_at).getTime()/1000)}))});
-      }
-      requireManager(req);
-      const title=String(body.title||'').trim().slice(0,150), text=String(body.body||'').trim().slice(0,1000);
-      let target=targetEmailOrAll(body.to||'all');
-      if(!title) return fail(res,422,'EMPTY_TITLE');
-      let row={title,body:text,created_at:now(),to_email:null,to_user_id:null,to_role:null};
-      if(target==='all') row.to_role='all';
-      else if(target==='staff') row.to_role='staff';
-      else if(target.includes('@')){
-        const tu=await getStudentByEmail(target); if(!tu) return fail(res,404,'USER_NOT_FOUND');
-        row.to_user_id=tu.id; row.to_email=tu.email||null;
-      }else{
-        const tu=await getStudentByPhone(target); if(!tu) return fail(res,404,'USER_NOT_FOUND');
-        row.to_user_id=tu.id; row.to_email=tu.email||null;
-      }
-      await sb('notifications',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify(row)});
-      await audit(sessionUser(req),'notification_sent',{title,body:text,target:target});
-      return ok(res);
-    }
-    if(action==='support' && method==='GET'){
-      const u=requireUser(req);
-      let query='tickets?select=id,user_id,user_name,user_email,subject,category,priority,status,created_at,updated_at&order=updated_at.desc&limit=200';
-      if(!isStaff(u.role)) query += `&user_id=eq.${eq(u.id)}`;
-      const tickets=await sb(query); const out=[]; for(const t of tickets||[]){ const full=await ticketWithMessages(t.id); out.push(flattenTicket(full)); }
-      return ok(res,{tickets:out,isAdmin:isStaff(u.role)});
-    }
-    if(action==='support' && method==='POST'){
-      const u=requireUser(req); if(isStaff(u.role) && u.role!=='owner') return fail(res,403,'FORBIDDEN');
-      const msg=String(body.message||'').trim().slice(0,5000); if(!msg) return fail(res,422,'EMPTY_MESSAGE');
-      const id=`TCK-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
-      const created=now();
-      await sb('tickets',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({id,user_id:u.id,user_name:u.name||'طالب',user_email:u.email||null,subject:'طلب دعم',category:'other',priority:'medium',status:'open',assigned_role:'support',created_at:created,updated_at:created})});
-      await sb('ticket_messages',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({ticket_id:id,from_role:'student',author_name:u.name||'طالب',text:msg,created_at:created})});
-      await sb('notifications',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({title:'تذكرة دعم جديدة',body:`${u.name||'طالب'}: طلب دعم`,to_role:'staff',created_at:created})});
-      await audit(u,'ticket_created',{ticket_id:id,subject:'طلب دعم'});
-      return ok(res,{id});
-    }
-    if(action==='support_reply' && method==='POST'){
-      const u=requireStaff(req); const id=String(body.id||''); const reply=String(body.reply||'').trim().slice(0,5000); if(!id||!reply) return fail(res,422,'BAD_REQUEST');
-      const t=await ticketWithMessages(id); if(!t) return fail(res,404,'NOT_FOUND');
-      const at=now(); await sb('ticket_messages',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({ticket_id:id,from_role:u.role,author_name:u.name||'فريق الدعم',text:reply,created_at:at})});
-      await sb(`tickets?id=eq.${eq(id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({status:'progress',updated_at:at})});
-      await sb('notifications',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({title:'رد جديد على تذكرتك',body:'فريق الدعم رد على تذكرتك.',to_user_id:t.user_id,to_email:t.user_email||null,created_at:at})});
-      await audit(u,'ticket_reply',{ticket_id:id,subject:t.subject});
-      return ok(res);
-    }
-    if(action==='admin_chat' && method==='GET'){
-      const u=requireStaff(req);
-      const rows=await sb('admin_chat_messages?select=id,user_id,author_name,author_role,text,created_at&order=created_at.asc&limit=300');
-      return ok(res,{messages:(rows||[]).map(m=>({id:m.id,userId:m.user_id,authorName:m.author_name,authorRole:m.author_role,text:m.text,createdAt:m.created_at}))});
-    }
-    if(action==='admin_chat' && method==='POST'){
-      const u=requireStaff(req);
-      const text=String(body.text||'').trim().slice(0,4000);
-      if(!text) return fail(res,422,'EMPTY_MESSAGE');
-      const at=now();
-      const inserted=await sb('admin_chat_messages',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({user_id:u.id,author_name:u.name||'فريق الإدارة',author_role:u.role,text,created_at:at})});
-      await sb('notifications',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({title:'رسالة جديدة في شات الإدارة',body:`${u.name||'فريق الإدارة'}: ${text.slice(0,120)}`,to_role:'staff',created_at:at})});
-      await audit(u,'admin_chat_message',{text:text.slice(0,240)});
-      return ok(res,{message:inserted?.[0]||{id:null,user_id:u.id,author_name:u.name||'فريق الإدارة',author_role:u.role,text,created_at:at}});
-    }
-    if(action==='ticket_list' && method==='GET'){
-      const u=requireUser(req);
-      let query='tickets?select=id,user_id,user_name,user_email,subject,category,priority,status,assigned_role,created_at,updated_at&order=updated_at.desc&limit=200';
-      if(!isStaff(u.role)) query += `&user_id=eq.${eq(u.id)}`;
-      const rows=await sb(query); const out=[]; for(const t of rows||[]) out.push(await ticketWithMessages(t.id));
-      return ok(res,{tickets:out.filter(Boolean),isAdmin:isStaff(u.role)});
-    }
-    if(action==='ticket_create' && method==='POST'){
-      const u=requireUser(req); if(isStaff(u.role) && u.role!=='owner') return fail(res,403,'FORBIDDEN');
-      const id=String(body.id||'').slice(0,80) || `TCK-${Date.now().toString(36).toUpperCase()}`;
-      const subject=String(body.subject||'').trim().slice(0,180), category=String(body.category||'other'), priority=String(body.priority||'medium'), message=String(body.message||'').trim().slice(0,5000);
-      if(!subject||!message) return fail(res,422,'BAD_REQUEST');
-      const at=now();
-      const existing=await sb(`tickets?select=id&id=eq.${eq(id)}&limit=1`); if(existing?.length) return ok(res,{ticket:await ticketWithMessages(id)});
-      await sb('tickets',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({id,user_id:u.id,user_name:u.name||'طالب',user_email:u.email||null,subject,category,priority,status:'open',assigned_role:'support',created_at:at,updated_at:at})});
-      await sb('ticket_messages',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({ticket_id:id,from_role:'student',author_name:u.name||'طالب',text:message,created_at:at})});
-      await sb('notifications',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({title:'تذكرة دعم جديدة',body:`${u.name||'طالب'}: ${subject}`,to_role:'staff',created_at:at})});
-      await audit(u,'ticket_created',{ticket_id:id,subject,category,priority});
-      return ok(res,{ticket:await ticketWithMessages(id)});
-    }
-    if(action==='ticket_reply' && method==='POST'){
-      const u=requireUser(req); const id=String(body.id||''), text=String(body.text||'').trim().slice(0,5000); if(!id||!text) return fail(res,422,'BAD_REQUEST');
-      const t=await ticketWithMessages(id); if(!t) return fail(res,404,'NOT_FOUND');
-      if(!isStaff(u.role) && String(t.user_id)!==String(u.id)) return fail(res,403,'FORBIDDEN');
-      const at=now(); await sb('ticket_messages',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({ticket_id:id,from_role:isStaff(u.role)?u.role:'student',author_name:u.name||'طالب',text,created_at:at})});
-      const status=isStaff(u.role) ? ((t.status==='open'||t.status==='closed')?'progress':t.status) : ((t.status==='resolved'||t.status==='closed')?'open':t.status);
-      await sb(`tickets?id=eq.${eq(id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({status,updated_at:at})});
-      if(isStaff(u.role)) await sb('notifications',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({title:'رد جديد على تذكرتك',body:t.subject,to_user_id:t.user_id,to_email:t.user_email||null,created_at:at})});
-      else await sb('notifications',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({title:'رد جديد من طالب',body:`${u.name||'طالب'}: ${t.subject}`,to_role:'staff',created_at:at})});
-      await audit(u,'ticket_reply',{ticket_id:id,subject:t.subject,as_staff:isStaff(u.role)});
-      return ok(res,{ticket:await ticketWithMessages(id)});
-    }
-    if(action==='ticket_status' && method==='POST'){
-      requireStaff(req); const id=String(body.id||''), status=String(body.status||''); if(!id) return fail(res,422,'BAD_REQUEST');
-      if(!['open','progress','resolved','closed'].includes(status)) return fail(res,422,'BAD_STATUS');
-      await sb(`tickets?id=eq.${eq(id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({status,updated_at:now()})}); return ok(res);
-    }
-    if(action==='ticket_priority' && method==='POST'){
-      requireStaff(req); const id=String(body.id||''), priority=String(body.priority||''); if(!id||!['low','medium','high','urgent'].includes(priority)) return fail(res,422,'BAD_PRIORITY');
-      await sb(`tickets?id=eq.${eq(id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({priority,updated_at:now()})}); return ok(res);
-    }
-    if(action==='ticket_mark_read' && method==='POST'){
-      requireUser(req); return ok(res);
-    }
-    if(action==='users' && method==='GET'){
-      const actor=requireUser(req);
-      if(actor.role!=='owner') return fail(res,403,'OWNER_ONLY');
-      // لا نعتمد على state هنا حتى لا تتعطل لوحة الحسابات إذا كانت قاعدة البيانات قديمة.
-      const rows=await sb('users?select=id,name,email,phone,username,role,state,created_at,updated_at&order=created_at.desc&limit=500');
-      return ok(res,{source:'supabase',total:Array.isArray(rows)?rows.length:0,users:(rows||[]).map(u=>({
-        id:u.id,name:u.name,email:u.email||'',phone:u.phone||'',username:u.username||'',role:u.role||'student',
-        grade:u.state?.grade||'',branch:u.state?.branch||'',created_at:u.created_at,updated_at:u.updated_at
-      }))});
-    }
-    if(action==='user_role' && method==='POST'){
-      const actor=requireUser(req);
-      if(actor.role!=='owner') return fail(res,403,'OWNER_ONLY');
-      const rawPhone=String(body.phone||'').trim(), id=String(body.id||''), role=String(body.role||'student');
-      if((!rawPhone&&!id)||!ALL_ROLES.has(role)||role==='owner') return fail(res,422,'ROLE_NOT_ALLOWED');
-      const target=rawPhone ? await getStudentByPhone(rawPhone) : await getUserById(id);
-      if(!target) return fail(res,404,'USER_NOT_FOUND');
-      if(target.role==='owner') return fail(res,403,'OWNER_PROTECTED');
-      await sb(`users?id=eq.${eq(target.id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({role,updated_at:now()})});
-      await sb('notifications',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({title:'تم تحديث رتبتك',body:`تم تعيين رتبتك إلى ${role}.`,to_user_id:target.id,to_email:target.email||null,created_at:now()})});
-      await audit(actor,'role_changed',{from_role:target.role,to_role:role,phone:target.phone||''},target);
-      return ok(res,{user:{id:target.id,name:target.name,phone:target.phone,email:target.email||'',username:target.username||'',role}});
-    }
-    if(action==='user_email' && method==='POST'){
-      const actor=requireUser(req);
-      if(actor.role!=='owner') return fail(res,403,'OWNER_ONLY');
-      const phone=String(body.phone||'').trim(), e=email(body.email);
-      if(!validPhone(phone)) return fail(res,422,'INVALID_PHONE');
-      if(!e || !validEmail(e)) return fail(res,422,'INVALID_EMAIL');
-      if(OWNER_EMAILS.has(e)) return fail(res,409,'EMAIL_EXISTS');
-      const target=await getStudentByPhone(phone); if(!target) return fail(res,404,'USER_NOT_FOUND');
-      const existing=await getStudentByEmail(e); if(existing && String(existing.id)!==String(target.id)) return fail(res,409,'EMAIL_EXISTS');
-      await sb(`users?id=eq.${eq(target.id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({email:e,updated_at:now()})});
-      await audit(actor,'email_changed',{email:e},target);
-      return ok(res,{user:{id:target.id,name:target.name,phone:target.phone,email:e,username:target.username||'',role:target.role}});
-    }
-    if(action==='user_delete' && method==='POST'){
-      const actor=requireUser(req);
-      if(actor.role!=='owner') return fail(res,403,'OWNER_ONLY');
-      const rawId=String(body.id||'').trim(), rawPhone=String(body.phone||'').trim();
-      if(!rawId && !rawPhone) return fail(res,422,'USER_REQUIRED');
-      const target=rawId ? await getUserById(rawId) : await getStudentByPhone(rawPhone);
-      if(!target) return fail(res,404,'USER_NOT_FOUND');
-      if(String(target.role||'')==='owner') return fail(res,403,'OWNER_PROTECTED');
-      if(String(target.id)===String(actor.id)) return fail(res,403,'CANNOT_DELETE_SELF');
-      await audit(actor,'user_deleted',{phone:target.phone||'',email:target.email||'',role:target.role||'student'},target);
-      await sb(`users?id=eq.${eq(target.id)}`,{method:'DELETE',headers:{Prefer:'return=minimal'}});
-      return ok(res,{deleted:{id:target.id,name:target.name,phone:target.phone||'',email:target.email||'',role:target.role||'student'}});
-    }
-    if(action==='audit_logs' && method==='GET'){
-      const owner=requireUser(req);
-      if(owner.role!=='owner') return fail(res,403,'OWNER_ONLY');
-      const limit=Math.min(Math.max(Number(body.limit||req.query.limit||100)||100,1),300);
-      const rows=await sb(`audit_logs?select=id,actor_user_id,actor_name,actor_role,action,target_user_id,target_name,details,created_at&order=created_at.desc&limit=${limit}`);
-      return ok(res,{logs:(rows||[]).map(x=>({id:x.id,actorUserId:x.actor_user_id,actorName:x.actor_name,actorRole:x.actor_role,action:x.action,targetUserId:x.target_user_id,targetName:x.target_name,details:x.details||{},createdAt:x.created_at}))});
-    }
-    return fail(res,404,'NOT_FOUND');
-  }catch(e){
-    const status=e.status||500;
-    // أخطاء التحقق/قاعدة البيانات المعروفة ترجع كودًا مفهومًا للواجهة.
-    // لا نرجع تفاصيل Supabase الخام حتى لا نكشف معلومات داخلية.
-    let code=e.code||'SERVER_ERROR';
-    if(code==='SERVER_ERROR' && e?.data?.code) code=String(e.data.code);
-    if(code==='42P01') code='SUPABASE_TABLE_MISSING';
-    if(code==='42703') code='SUPABASE_COLUMN_MISSING';
-    if(code==='PGRST205') code='SUPABASE_TABLE_MISSING';
-    if(code==='23505'){
-      const msg=String(e?.data?.message||e?.message||'').toLowerCase();
-      code=msg.includes('username')?'USERNAME_EXISTS':msg.includes('phone')?'PHONE_EXISTS':msg.includes('email')?'EMAIL_EXISTS':'DUPLICATE_ENTRY';
-    }
-    return fail(res,status,code);
-  }
-}
-
-module.exports = handler;
+};

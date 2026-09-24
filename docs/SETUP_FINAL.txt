@@ -1,0 +1,41 @@
+تشغيل النسخة النهائية على Vercel
+================================
+
+1) أنشئ مشروع Supabase.
+2) افتح SQL Editor وشغّل الملف SUPABASE.sql كاملًا. الملف يحتوي جداول الحسابات والتذاكر والإشعارات والرتب مع تحديث للجداول القديمة.
+3) في Vercel > Settings > Environment Variables أضف:
+   SUPABASE_URL = Project URL
+   SUPABASE_SERVICE_ROLE_KEY = service_role key
+   SESSION_SECRET = أي نص عشوائي طويل 32 حرفًا أو أكثر
+   OWNER_EMAIL = semos91100@gmail.com
+   OWNER_PASSWORD = alton112233
+4) اعمل Redeploy.
+
+تسجيل الدخول:
+- الطالب: رقم الموبايل + كلمة المرور.
+- الإدارة: البريد الإلكتروني + كلمة المرور.
+- حساب OWNER الافتراضي: semos91100@gmail.com / alton112233
+
+الرتب:
+OWNER > ADMIN > MODERATOR > SUPPORT > STUDENT
+- OWNER يدير كل شيء ولا يمكن لأي رتبة تغييره.
+- ADMIN يدير الموقع والتذاكر ويعطي STUDENT/SUPPORT/MODERATOR.
+- MODERATOR وSUPPORT يردان على التذاكر ويغيران الحالة والأولوية.
+- STUDENT يرى تذاكره ويفتح تذاكر جديدة.
+
+الإشعارات:
+يمكن إرسالها للجميع (all)، فريق الدعم (staff)، أو لطالب برقم الموبايل/الإيميل.
+
+مهم: لا تضع SUPABASE_SERVICE_ROLE_KEY داخل ملفات frontend أو GitHub.
+
+OWNER ACCOUNTS
+- Primary OWNER: semos91100@gmail.com — display name ALTON.
+- Optional OWNER 2: set OWNER_2_EMAIL, OWNER_2_NAME, OWNER_2_PASSWORD in Vercel.
+- Optional OWNER 3: set OWNER_3_EMAIL, OWNER_3_NAME, OWNER_3_PASSWORD in Vercel.
+- Blank optional OWNER variables remain disabled.
+
+ADMIN CHAT
+- Run the updated SUPABASE.sql to create admin_chat_messages.
+- The chat is available only to staff roles and is accessible from "شات الإدارة".
+
+إصلاح مهم: النسخة الحالية تحتوي على تعريف مراحل/شعب الثانوية داخل API نفسه، لذلك تسجيل الحساب لا يعتمد على متغير واجهة غير موجود.
