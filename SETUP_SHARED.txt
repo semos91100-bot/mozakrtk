@@ -1,0 +1,37 @@
+نسخة مذاكرتك — إشعارات وتذاكر مشتركة بين كل الأجهزة
+===================================================
+
+المشكلة التي تم حلها:
+- النسخة القديمة كانت تحفظ الإشعارات والتذاكر في localStorage، لذلك كل جهاز كان يرى بياناته فقط.
+- النسخة الجديدة تستخدم API على Vercel + Supabase، لذلك التذكرة التي يفتحها الطالب تظهر للأدمن، ورد الأدمن يصل للطالب، والإشعارات مشتركة.
+
+1) أنشئ مشروعًا على Supabase.
+2) افتح SQL Editor والصق كل محتوى الملف:
+   SUPABASE.sql
+   ثم اضغط Run.
+3) من Supabase > Project Settings > API خذ:
+   - Project URL
+   - service_role key
+
+4) في Vercel > مشروع الموقع > Settings > Environment Variables أضف:
+   SUPABASE_URL = رابط مشروع Supabase
+   SUPABASE_SERVICE_ROLE_KEY = service_role key
+   SESSION_SECRET = أي نص عشوائي طويل (مثلاً 32+ حرف)
+
+اختياري:
+   ADMIN_EMAIL = semos91100@gmail.com
+   ADMIN_PASSWORD = alton112233
+   (لو لم تضفهما، النسخة تستخدمهما تلقائيًا.)
+
+5) اعمل Redeploy على Vercel.
+
+بعدها:
+- الطالب يسجل حسابه من الموقع.
+- يفتح "الدعم الفني" ثم "+ تذكرة جديدة".
+- التذكرة تظهر عند الأدمن على أي جهاز.
+- رد الأدمن يصل للطالب داخل إشعارات الموقع والتذكرة.
+- إشعار المشرف يظهر لكل الطلاب أو لطالب معين حسب البريد.
+
+مهم جدًا:
+- لا تضع SUPABASE_SERVICE_ROLE_KEY داخل HTML أو JavaScript.
+- لا ترفع قيم Environment Variables إلى GitHub.
