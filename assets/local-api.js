@@ -34,6 +34,7 @@
     if(action==="users"&&method==="GET"){if(!MANAGERS.has(u?.role))return response(false,{error:"FORBIDDEN",httpStatus:403});return response(true,{users:DB.users.map(x=>({id:x.id,name:x.name,email:x.email||"",phone:x.phone||"",role:x.role||"student",grade:x.state?.grade||"",branch:x.state?.branch||"",created_at:x.created_at,updated_at:x.updated_at}))});}
     if(action==="user_role"&&method==="POST"){if(u?.role!=="owner")return response(false,{error:"OWNER_ONLY",httpStatus:403});const phone=String(d.phone||"").trim(),id=Number(d.id),role=String(d.role||"student");if(!["student","support","moderator","admin"].includes(role))return response(false,{error:"ROLE_NOT_ALLOWED",httpStatus:403});const target=phone?DB.users.find(x=>normalizePhone(x.phone)===normalizePhone(phone)):DB.users.find(x=>x.id===id);if(!target)return response(false,{error:"USER_NOT_FOUND",httpStatus:404});if(String(target.id)===String(u.id))return response(false,{error:"CANNOT_CHANGE_SELF_ROLE",httpStatus:403});if(target.role==="owner")return response(false,{error:"OWNER_PROTECTED",httpStatus:403});if(u.role==="admin"&&!['student','support','moderator'].includes(role))return response(false,{error:"ROLE_NOT_ALLOWED",httpStatus:403});target.role=role;save();return response(true);}
     if(action==="user_email"&&method==="POST"){if(u?.role!=="owner")return response(false,{error:"OWNER_ONLY",httpStatus:403});const phone=String(d.phone||"").trim(),e=email(d.email);if(!validPhone(phone)||!e||!validEmail(e))return response(false,{error:"INVALID_EMAIL",httpStatus:422});if(e===OWNER_EMAIL)return response(false,{error:"EMAIL_EXISTS",httpStatus:409});const target=DB.users.find(x=>normalizePhone(x.phone)===normalizePhone(phone));if(!target)return response(false,{error:"USER_NOT_FOUND",httpStatus:404});if(DB.users.some(x=>x.id!==target.id&&email(x.email)===e))return response(false,{error:"EMAIL_EXISTS",httpStatus:409});target.email=e;save();return response(true,{user:safe(target)});}
+    if(action==="user_delete"&&method==="POST"){if(u?.role!=="owner")return response(false,{error:"OWNER_ONLY",httpStatus:403});const id=String(d.id||"");const phone=String(d.phone||"").trim();const target=id?DB.users.find(x=>String(x.id)===id):(phone?DB.users.find(x=>normalizePhone(x.phone)===normalizePhone(phone)):null);if(!target)return response(false,{error:"USER_NOT_FOUND",httpStatus:404});if(String(target.id)===String(u.id)||target.role==="owner")return response(false,{error:target.role==="owner"?"OWNER_PROTECTED":"CANNOT_DELETE_SELF",httpStatus:403});const uid=String(target.id);DB.users=DB.users.filter(x=>String(x.id)!==uid);DB.notifications=DB.notifications.filter(x=>String(x.userId||"")!==uid);DB.support=DB.support.filter(x=>String(x.uid)!==uid);save();return response(true,{deleted:{id:target.id,name:target.name||"",phone:target.phone||"",email:target.email||"",role:target.role||"student"}});}
     if(action==="ticket_list"&&method==="GET"){if(!u)return response(false,{error:"AUTH_REQUIRED",httpStatus:401});const list=STAFF.has(u.role)?MozakraTicketing?.all?.()||DB.support:DB.support.filter(t=>String(t.uid)===String(u.id));return response(true,{tickets:list,isAdmin:STAFF.has(u.role)});}
     if(action==="ticket_create"&&method==="POST"){if(!u)return response(false,{error:"AUTH_REQUIRED",httpStatus:401});if(STAFF.has(u.role)&&u.role!=="owner")return response(false,{error:"FORBIDDEN",httpStatus:403});const msg=String(d.message||"").trim().slice(0,5000),subject=String(d.subject||"").trim().slice(0,180);if(!msg||!subject)return response(false,{error:"BAD_REQUEST",httpStatus:422});const id=String(d.id||`TCK-${Date.now().toString(36).toUpperCase()}`);const t={id,userId:String(u.id),userName:u.name,userEmail:u.email||"",subject,category:d.category||"other",priority:d.priority||"medium",status:"open",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),messages:[{from:"student",authorName:u.name,text:msg,at:new Date().toISOString()}]};DB.support.unshift({id,uid:u.id,email:u.email||"",name:u.name,message:msg,reply:null,status:"open",created_at:now(),replied_at:null,subject,category:t.category,priority:t.priority,messages:t.messages});DB.notifications.unshift({id:Number(DB.nextNotifId||1),title:"تذكرة دعم جديدة",body:`${u.name}: ${subject}`,to:"staff",created_at:now()});DB.nextNotifId++;save();return response(true,{ticket:t});}
     if(action==="ticket_reply"&&method==="POST"){if(!u)return response(false,{error:"AUTH_REQUIRED",httpStatus:401});const row=DB.support.find(x=>String(x.id)===String(d.id));if(!row)return response(false,{error:"NOT_FOUND",httpStatus:404});if(!STAFF.has(u.role)&&String(row.uid)!==String(u.id))return response(false,{error:"FORBIDDEN",httpStatus:403});const txt=String(d.text||"").trim().slice(0,5000);if(!txt)return response(false,{error:"BAD_REQUEST",httpStatus:422});const at=new Date().toISOString();row.messages=row.messages||[{from:"student",authorName:row.name,text:row.message,at:new Date(Number(row.created_at)*1000).toISOString()}];row.messages.push({from:STAFF.has(u.role)?u.role:"student",authorName:u.name,text:txt,at});row.updatedAt=at;if(STAFF.has(u.role)){row.reply=txt;row.status="answered";row.replied_at=now();DB.notifications.unshift({id:Number(DB.nextNotifId||1),title:"رد جديد على تذكرتك",body:row.subject||"الدعم الفني",to:row.email||"",userId:row.uid,created_at:now()});}else{row.status="open";DB.notifications.unshift({id:Number(DB.nextNotifId||1),title:"رد جديد من طالب",body:`${u.name}: ${row.subject||"الدعم الفني"}`,to:"staff",created_at:now()});}DB.nextNotifId++;save();return response(true,{ticket:row});}
@@ -126,20 +127,24 @@
       return [...list].sort(sortDesc);
     },
     get(id){ return DB.tickets.find(t=>t.id===id)||null; },
-    create({subject,category,priority,message}){
+    async create({subject,category,priority,message}){
       const u=current(); if(!u) return {ok:false,msg:"لازم تسجّل الدخول الأول."};
       const at=now();
       const ticket={id:uid(),userId:String(u.id),userName:u.name,userEmail:u.email,subject:String(subject||"").trim().slice(0,180),category:category||"other",priority:priority||"medium",status:"open",createdAt:at,updatedAt:at,messages:[{from:"student",authorName:u.name,text:String(message||"").trim().slice(0,5000),at}]};
       if(!ticket.subject || !ticket.messages[0].text) return {ok:false,msg:"اكتب موضوع ومحتوى التذكرة."};
       ticket.syncPending=true; DB.tickets.unshift(ticket); save(DB);
       pushNotification({audience:"admin",title:"تذكرة دعم جديدة",body:`${u.name}: ${ticket.subject}`,ticketId:ticket.id});
-      if(typeof apiJSON==="function") (async()=>{
-        const d=await apiJSON("ticket_create",{method:"POST",body:JSON.stringify({id:ticket.id,subject:ticket.subject,category:ticket.category,priority:ticket.priority,message:ticket.messages[0].text})});
-        if(d.ok && d.ticket){ const rt=normalizeRemote(d.ticket); const idx=DB.tickets.findIndex(x=>x.id===ticket.id); if(idx>=0){ delete rt.syncPending; DB.tickets[idx]=rt; save(DB); } }
-      })();
+      if(typeof apiJSON==="function") {
+        // لا نعتبر التذكرة مرسلة إلا بعد نجاح السيرفر؛ هذا يمنع ظهور "تم" بينما التذكرة لم تصل للإدارة.
+        try {
+          const d=await apiJSON("ticket_create",{method:"POST",body:JSON.stringify({id:ticket.id,subject:ticket.subject,category:ticket.category,priority:ticket.priority,message:ticket.messages[0].text})});
+          if(d.ok && d.ticket){ const rt=normalizeRemote(d.ticket); const idx=DB.tickets.findIndex(x=>x.id===ticket.id); if(idx>=0){ delete rt.syncPending; DB.tickets[idx]=rt; save(DB); } return {ok:true,ticket:rt}; }
+          return {ok:false,msg:(typeof authMessage==="function"?authMessage(d.error):"التذكرة لم تصل للسيرفر.")};
+        } catch(_) { return {ok:false,msg:"التذكرة لم تصل للسيرفر."}; }
+      }
       return {ok:true,ticket};
     },
-    reply(id,text){
+    async reply(id,text){
       const u=current(); const t=this.get(id); if(!u||!t) return {ok:false,msg:"التذكرة غير موجودة."};
       const clean=String(text||"").trim().slice(0,5000); if(!clean) return {ok:false,msg:"اكتب الرد الأول."};
       const isAdmin=(typeof isStaffRole==="function"?isStaffRole(u.role):["support","moderator","admin","owner"].includes(u.role));
@@ -149,7 +154,9 @@
       if(!isAdmin && (t.status==="resolved"||t.status==="closed")) t.status="open";
       save(DB);
       pushNotification(isAdmin?{audience:"user",userId:String(t.userId),title:"رد جديد على تذكرتك",body:t.subject,ticketId:t.id}:{audience:"admin",title:"رد جديد من طالب",body:`${u.name}: ${t.subject}`,ticketId:t.id});
-      if(typeof apiJSON==="function") (async()=>{ const d=await apiJSON("ticket_reply",{method:"POST",body:JSON.stringify({id:t.id,text:clean})}); if(d.ok&&d.ticket){ const rt=normalizeRemote(d.ticket); const i=DB.tickets.findIndex(x=>x.id===t.id); if(i>=0) DB.tickets[i]=rt; save(DB); } })();
+      if(typeof apiJSON==="function") {
+        try { const d=await apiJSON("ticket_reply",{method:"POST",body:JSON.stringify({id:t.id,text:clean})}); if(d.ok&&d.ticket){ const rt=normalizeRemote(d.ticket); const i=DB.tickets.findIndex(x=>x.id===t.id); if(i>=0) DB.tickets[i]=rt; save(DB); return {ok:true,ticket:rt}; } return {ok:false,msg:(typeof authMessage==="function"?authMessage(d.error):"الرسالة لم تصل للسيرفر.")}; } catch(_) { return {ok:false,msg:"الرسالة لم تصل للسيرفر."}; }
+      }
       return {ok:true,ticket:t};
     },
     setStatus(id,status){ const u=current(),t=this.get(id); if(!u||!((typeof isStaffRole==="function"?isStaffRole(u.role):["support","moderator","admin","owner"].includes(u.role)))||!t||!TICKET_STATUSES.some(x=>x.id===status)) return {ok:false}; t.status=status;t.updatedAt=now();save(DB); if(typeof apiJSON==="function") apiJSON("ticket_status",{method:"POST",body:JSON.stringify({id,status})});return {ok:true,ticket:t}; },

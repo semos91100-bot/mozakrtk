@@ -1,0 +1,21 @@
+OWNER CONTROL — النسخة الحالية
+
+- الـ OWNER الأساسي: semos91100@gmail.com / ALTON
+- لوحة التحكم: #/admin
+- مشاهدة كل الحسابات المسجلة بالاسم والرقم والبريد والمرحلة/الشعبة.
+- تغيير رتبة أي حساب غير OWNER.
+- حذف أي حساب غير OWNER بشكل نهائي من السيرفر.
+- حسابات OWNER محمية من الحذف أو تحويل الرتبة.
+- شات الإدارة: #/admin-chat، متاح للـ OWNER وفريق الإدارة فقط.
+- لا يحتاج حذف الحسابات أي تعديل جديد على SUPABASE.sql لأن علاقات التذاكر والإشعارات الحالية فيها ON DELETE CASCADE.
+
+Vercel:
+SUPABASE_URL=...
+SUPABASE_SERVICE_ROLE_KEY=...
+SESSION_SECRET=...
+OWNER_EMAIL=semos91100@gmail.com
+OWNER_PASSWORD=...
+
+للـ OWNER إضافي:
+OWNER_2_EMAIL / OWNER_2_NAME / OWNER_2_PASSWORD
+OWNER_3_EMAIL / OWNER_3_NAME / OWNER_3_PASSWORD

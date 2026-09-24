@@ -38,3 +38,9 @@
 - تالتة ثانوي: علمي علوم / علمي رياضة / أدبي.
 
 الاختيار يُحفظ داخل حالة الحساب، ويظهر في رأس الموقع والملف الشخصي ولوحة الإدارة. المحتوى الدراسي الموجود في هذه النسخة يظل كما هو؛ لا يتم اختلاق مناهج أو أسئلة غير مضافة فعليًا للمشروع.
+
+## OWNER control panel
+The OWNER account (default `semos91100@gmail.com`) has a protected control panel at `#/admin`.
+It can list registered accounts by name/phone/email, change non-owner roles, assign email addresses, and permanently delete non-owner accounts. Account deletion is server-side and cascades through user-owned tickets/notifications via the existing Supabase foreign keys.
+
+The internal `#/admin-chat` is available to OWNER and all staff roles. Students are blocked from the staff chat by the API authorization checks.

@@ -363,11 +363,11 @@ function renderNewTicketFormOld(){
 function refreshTicketViewOld(){ window.__creatingTicket=false; render(); }
 function wireTicketPageOld(){
   const form=document.querySelector("#newTicketFormOld");
-  if(form&&!form.dataset.wired){form.dataset.wired="1";form.addEventListener("submit",e=>{e.preventDefault();const f=new FormData(e.target);const r=MozakraTicketing.create({subject:f.get("subject"),category:f.get("category"),priority:f.get("priority"),message:f.get("message")});if(!r.ok)return toast(r.msg);window.__activeTicket=r.ticket.id;window.__creatingTicket=false;toast("تم إرسال التذكرة بنجاح ✅");render();});}
+  if(form&&!form.dataset.wired){form.dataset.wired="1";form.addEventListener("submit",async e=>{e.preventDefault();const f=new FormData(e.target);const r=await MozakraTicketing.create({subject:f.get("subject"),category:f.get("category"),priority:f.get("priority"),message:f.get("message")});if(!r.ok)return toast(r.msg||"التذكرة لم تصل للسيرفر.");window.__activeTicket=r.ticket.id;window.__creatingTicket=false;toast("تم إرسال التذكرة بنجاح ✅");await fetchSupport();render();});}
   document.querySelectorAll("[data-ticket-id]").forEach(el=>{if(el.dataset.wired)return;el.dataset.wired="1";el.addEventListener("click",()=>{window.__activeTicket=el.dataset.ticketId;window.__creatingTicket=false;render();});});
   document.querySelectorAll("[data-ticket-status]").forEach(el=>{if(el.dataset.wired)return;el.dataset.wired="1";el.addEventListener("change",()=>{MozakraTicketing.setStatus(el.dataset.ticketStatus,el.value);toast("اتحدّثت حالة التذكرة");render();});});
   document.querySelectorAll("[data-ticket-priority]").forEach(el=>{if(el.dataset.wired)return;el.dataset.wired="1";el.addEventListener("change",()=>{MozakraTicketing.setPriority(el.dataset.ticketPriority,el.value);toast("اتحدّثت أولوية التذكرة");render();});});
-  document.querySelectorAll("[data-ticket-reply]").forEach(form=>{if(form.dataset.wired)return;form.dataset.wired="1";form.addEventListener("submit",e=>{e.preventDefault();const ta=form.querySelector("textarea");const r=MozakraTicketing.reply(form.dataset.ticketReply,ta.value);if(r.ok){toast("تم إرسال الرد");render();}else toast(r.msg);});});
+  document.querySelectorAll("[data-ticket-reply]").forEach(form=>{if(form.dataset.wired)return;form.dataset.wired="1";form.addEventListener("submit",async e=>{e.preventDefault();const ta=form.querySelector("textarea");const r=await MozakraTicketing.reply(form.dataset.ticketReply,ta.value);if(r.ok){toast("تم إرسال الرد");await fetchSupport();render();}else toast(r.msg||"الرسالة لم تصل للسيرفر.");});});
   document.querySelectorAll("[data-ticket-action]").forEach(el=>{if(el.dataset.wired)return;el.dataset.wired="1";el.addEventListener("click",()=>{if(el.dataset.ticketAction==="new")window.__creatingTicket=true;else window.__creatingTicket=false;render();});});
   const sf=document.querySelector("#ticketStatusFilter"),pf=document.querySelector("#ticketPriorityFilter"),qf=document.querySelector("#ticketSearchFilter");
   const filter=()=>{let list=MozakraTicketing.forCurrentUser();if(sf?.value)list=list.filter(t=>t.status===sf.value);if(pf?.value)list=list.filter(t=>t.priority===pf.value);if(qf?.value){const q=qf.value.trim().toLowerCase();list=list.filter(t=>(t.subject||"").toLowerCase().includes(q)||(t.userName||"").toLowerCase().includes(q)||(t.userEmail||"").toLowerCase().includes(q));}const box=document.querySelector("#ticketListOld");if(box)box.innerHTML=renderTicketRowsOld(list,isStaffRole(AUTH.user?.role));wireTicketPageOld();};
@@ -410,26 +410,41 @@ function vAdmin(){
     <button class="btn primary" data-act="sendnotif">إرسال الإشعار</button>
   </div>`:''}
 
-  ${AUTH.user.role==='owner'?`<h2 style="margin-bottom:10px">👑 أدوات الـ OWNER</h2>
+  ${AUTH.user.role==='owner'?`<h2 style="margin-bottom:10px">👑 لوحة الـ OWNER — تحكم كامل</h2>
+  <div class="grid g4" style="margin-bottom:16px">
+    <div class="card"><div class="xs muted">كل الحسابات</div><div style="font-size:28px;font-weight:800;margin-top:4px">${USERS.length}</div></div>
+    <div class="card"><div class="xs muted">طلاب</div><div style="font-size:28px;font-weight:800;margin-top:4px">${USERS.filter(u=>u.role==='student').length}</div></div>
+    <div class="card"><div class="xs muted">فريق الإدارة</div><div style="font-size:28px;font-weight:800;margin-top:4px">${USERS.filter(u=>u.role!=='student').length}</div></div>
+    <a class="card" href="#/admin-chat" style="text-decoration:none"><div class="xs muted">شات الإدارة</div><div style="font-size:22px;font-weight:800;margin-top:7px">💬 فتح الشات</div></a>
+  </div>
   <div class="grid g2" style="margin-bottom:24px">
     <div class="card">
-      <h3 style="margin-bottom:8px">تعيين رتبة برقم الموبايل</h3>
-      <p class="muted sm" style="margin-bottom:10px">اكتب رقم الطالب وحدد الرتبة. الـ OWNER فقط يملك الصلاحية دي.</p>
+      <h3 style="margin-bottom:8px">تغيير الرتبة برقم الموبايل</h3>
+      <p class="muted sm" style="margin-bottom:10px">الـ OWNER فقط يقدر يضيف أو يزيل رتب الحسابات.</p>
       <label class="field"><span>رقم الموبايل</span><input id="role_phone" inputmode="tel" placeholder="01xxxxxxxxx"></label>
       <label class="field"><span>الرتبة الجديدة</span><select id="role_value">${['student','support','moderator','admin'].map(r=>`<option value="${r}">${roleLabel(r)}</option>`).join('')}</select></label>
       <button class="btn primary" data-act="setrolephone">تعيين الرتبة</button>
     </div>
     <div class="card">
       <h3 style="margin-bottom:8px">تسجيل بريد إلكتروني</h3>
-      <p class="muted sm" style="margin-bottom:10px">البريد الإلكتروني للحسابات لا يضيفه إلا الـ OWNER.</p>
+      <p class="muted sm" style="margin-bottom:10px">البريد الإلكتروني لا يضيفه إلا الـ OWNER.</p>
       <label class="field"><span>رقم الموبايل</span><input id="email_phone" inputmode="tel" placeholder="01xxxxxxxxx"></label>
       <label class="field"><span>البريد الإلكتروني</span><input id="user_email" type="email" placeholder="student@example.com"></label>
       <button class="btn primary" data-act="setuseremail">حفظ البريد</button>
     </div>
   </div>
-  <h2 style="margin-bottom:10px">👥 الحسابات والرتب الحالية</h2>
+  <div class="between" style="margin-bottom:10px"><h2>👥 الحسابات المسجلة</h2><input id="ownerUserSearch" class="input" placeholder="بحث بالاسم أو الرقم أو البريد…" style="max-width:320px"></div>
   <div class="card" style="margin-bottom:24px">
-    ${USERS.length?`<div class="ticket-user-table">${USERS.map(u=>`<div class="item"><div class="ico">${u.role==='owner'?'👑':u.role==='admin'?'🔴':u.role==='moderator'?'🟠':u.role==='support'?'🔵':'👤'}</div><div class="gr"><b>${esc(u.name||'طالب')}</b><span>${esc(u.phone||'بدون رقم')} · ${esc(roleLabel(u.role))}${u.email?` · ${esc(u.email)}`:''}${u.grade?` · ${esc(educationGradeLabel(u.grade))}`:''}${u.branch?` — ${esc(educationBranchLabel(u.grade,u.branch))}`:''}</span></div></div>`).join('')}</div>`:`<div class="empty"><b>مفيش حسابات مسجلين لسه</b></div>`}
+    ${USERS.length?`<div class="ticket-user-table" id="ownerUsersList">${USERS.map(u=>`<div class="item owner-user-row" data-search="${esc(`${u.name||''} ${u.phone||''} ${u.email||''} ${roleLabel(u.role)}`.toLowerCase())}" style="align-items:flex-start">
+      <div class="ico">${u.role==='owner'?'👑':u.role==='admin'?'🔴':u.role==='moderator'?'🟠':u.role==='support'?'🔵':'👤'}</div>
+      <div class="gr" style="min-width:0">
+        <b>${esc(u.name||'طالب')}</b>
+        <span>${esc(u.phone||'بدون رقم')} · ${esc(roleLabel(u.role))}${u.email?` · ${esc(u.email)}`:''}${u.grade?` · ${esc(educationGradeLabel(u.grade))}`:''}${u.branch?` — ${esc(educationBranchLabel(u.grade,u.branch))}`:''}</span>
+        <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:7px">
+          ${u.role==='owner'?`<span class="chip on">حساب OWNER محمي</span>`:`<select class="select" data-act="setrole" data-id="${esc(u.id)}" style="min-width:150px">${['student','support','moderator','admin'].map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${roleLabel(r)}</option>`).join('')}</select><button class="btn sm" data-act="deleteuser" data-id="${esc(u.id)}">🗑️ حذف الحساب</button>`}
+        </div>
+      </div>
+    </div>`).join('')}</div>`:`<div class="empty"><b>مفيش حسابات مسجلة لسه</b></div>`}
   </div>`:''}
 
   <div class="between" style="margin-bottom:10px"><h2>🆘 الدعم الفني</h2>${open?`<span class="chip on">${open} مفتوحة</span>`:""}</div>

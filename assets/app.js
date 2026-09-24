@@ -441,6 +441,29 @@ document.addEventListener("click",e=>{
   }
 });
 
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-act="deleteuser"]');
+  if(!b || AUTH.user?.role!=='owner') return;
+  const id=String(b.dataset.id||'');
+  const row=b.closest('.owner-user-row');
+  const name=row?.querySelector('b')?.textContent?.trim()||'الحساب';
+  if(!id) return;
+  if(!confirm(`هتحذف حساب «${name}» نهائيًا بكل بياناته وتذاكره وإشعاراته. متأكد؟`)) return;
+  (async()=>{
+    b.disabled=true;
+    const d=await apiJSON('user_delete',{method:'POST',body:JSON.stringify({id})});
+    if(d.ok){ toast('تم حذف الحساب نهائيًا ✅'); await fetchUsers(); await fetchSupport(); render(); }
+    else { b.disabled=false; toast(authMessage(d.error)); }
+  })();
+});
+
+document.addEventListener('input',e=>{
+  const input=e.target.closest('#ownerUserSearch');
+  if(!input) return;
+  const q=(input.value||'').trim().toLowerCase();
+  document.querySelectorAll('.owner-user-row').forEach(row=>{ row.hidden=!!q && !(row.dataset.search||'').includes(q); });
+});
+
 document.addEventListener('click',e=>{ const b=e.target.closest('[data-act="setrolephone"],[data-act="setuseremail"]'); if(!b||AUTH.user?.role!=='owner') return; (async()=>{ if(b.dataset.act==='setrolephone'){const phone=$("#role_phone")?.value.trim()||'';const role=$("#role_value")?.value||'student';if(!phone){toast('اكتب رقم الموبايل');return;}const d=await apiJSON('user_role',{method:'POST',body:JSON.stringify({phone,role})});toast(d.ok?'تم تعيين الرتبة':authMessage(d.error));if(d.ok){await fetchUsers();render();}}else{const phone=$("#email_phone")?.value.trim()||'';const email=$("#user_email")?.value.trim()||'';if(!phone||!email){toast('اكتب رقم الموبايل والبريد');return;}const d=await apiJSON('user_email',{method:'POST',body:JSON.stringify({phone,email})});toast(d.ok?'تم حفظ البريد الإلكتروني':authMessage(d.error));if(d.ok){await fetchUsers();render();}}})();});
 
 document.addEventListener("change",e=>{

@@ -347,3 +347,15 @@ function paintNav(){
     `<a href="${n.h}" class="${cur.startsWith(n.h)?"on":""}"><i>${n.i}</i>${n.t}</a>`).join("");
   $("#tabbar").innerHTML=TABS.map(n=>`<a href="${n.h}" class="${cur.startsWith(n.h)?"on":""}"><i>${n.i}</i>${n.t}</a>`).join("");
 }
+
+// مزامنة تلقائية: الإشعارات والتذاكر تظهر على جهاز الإدارة بدون إعادة تحميل الصفحة.
+setInterval(async()=>{
+  if(!AUTH.user) return;
+  try{
+    await fetchNotifications();
+    if(globalThis.MozakraTicketing?.sync) await globalThis.MozakraTicketing.sync();
+    const route=(location.hash||'').slice(2).split('?')[0].split('/')[0];
+    if(route==='support' || route==='admin') await fetchSupport();
+    if(route==='admin-chat' && isStaffRole(AUTH.user.role)) await fetchAdminChat();
+  }catch(_){ }
+},8000);

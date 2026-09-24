@@ -222,11 +222,17 @@ async function handler(req,res){
     if(action==='notifications'){
       const u=requireUser(req);
       if(method==='GET'){
-        const clauses=[`to_role.eq.all`,`to_user_id.eq.${eq(u.id)}`];
-        if(u.email) clauses.push(`to_email.eq.${eq(u.email)}`);
-        if(isStaff(u.role)) clauses.push(`to_role.eq.staff`);
-        const rows=await sb(`notifications?select=id,title,body,to_email,to_user_id,to_role,created_at&id=gt.0&or=(${clauses.join(',')})&order=created_at.desc&limit=100`);
-        return ok(res,{notifications:(rows||[]).map(n=>({id:n.id,title:n.title,body:n.body,to:n.to_role==='staff'?'all-admins':(n.to_role==='all'?'all':(n.to_email||'user')),created_at:Math.floor(new Date(n.created_at).getTime()/1000)}))});
+        // استخدم استعلامات منفصلة بدل OR المركب حتى لا تعتمد القراءة على صياغة PostgREST OR.
+        const queries=[
+          `notifications?select=id,title,body,to_email,to_user_id,to_role,created_at&to_role=eq.all&order=created_at.desc&limit=100`,
+          `notifications?select=id,title,body,to_email,to_user_id,to_role,created_at&to_user_id=eq.${eq(u.id)}&order=created_at.desc&limit=100`
+        ];
+        if(u.email) queries.push(`notifications?select=id,title,body,to_email,to_user_id,to_role,created_at&to_email=eq.${eq(u.email)}&order=created_at.desc&limit=100`);
+        if(isStaff(u.role)) queries.push(`notifications?select=id,title,body,to_email,to_user_id,to_role,created_at&to_role=eq.staff&order=created_at.desc&limit=100`);
+        const groups=await Promise.all(queries.map(q=>sb(q)));
+        const map=new Map(); for(const group of groups) for(const n of (group||[])) map.set(String(n.id),n);
+        const rows=[...map.values()].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).slice(0,100);
+        return ok(res,{notifications:rows.map(n=>({id:n.id,title:n.title,body:n.body,to:n.to_role==='staff'?'all-admins':(n.to_role==='all'?'all':(n.to_email||'user')),created_at:Math.floor(new Date(n.created_at).getTime()/1000)}))});
       }
       requireManager(req);
       const title=String(body.title||'').trim().slice(0,150), text=String(body.body||'').trim().slice(0,1000);
@@ -354,6 +360,18 @@ async function handler(req,res){
       const existing=await getStudentByEmail(e); if(existing && String(existing.id)!==String(target.id)) return fail(res,409,'EMAIL_EXISTS');
       await sb(`users?id=eq.${eq(target.id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({email:e,updated_at:now()})});
       return ok(res,{user:{id:target.id,name:target.name,phone:target.phone,email:e,role:target.role}});
+    }
+    if(action==='user_delete' && method==='POST'){
+      const actor=requireUser(req);
+      if(actor.role!=='owner') return fail(res,403,'OWNER_ONLY');
+      const rawId=String(body.id||'').trim(), rawPhone=String(body.phone||'').trim();
+      if(!rawId && !rawPhone) return fail(res,422,'USER_REQUIRED');
+      const target=rawId ? await getUserById(rawId) : await getStudentByPhone(rawPhone);
+      if(!target) return fail(res,404,'USER_NOT_FOUND');
+      if(String(target.role||'')==='owner') return fail(res,403,'OWNER_PROTECTED');
+      if(String(target.id)===String(actor.id)) return fail(res,403,'CANNOT_DELETE_SELF');
+      await sb(`users?id=eq.${eq(target.id)}`,{method:'DELETE',headers:{Prefer:'return=minimal'}});
+      return ok(res,{deleted:{id:target.id,name:target.name,phone:target.phone||'',email:target.email||'',role:target.role||'student'}});
     }
     return fail(res,404,'NOT_FOUND');
   }catch(e){
