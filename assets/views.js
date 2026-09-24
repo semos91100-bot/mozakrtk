@@ -435,7 +435,8 @@ function vAdmin(){
   </div>
   <div class="between" style="margin-bottom:10px"><h2>👥 الحسابات المسجلة</h2><input id="ownerUserSearch" class="input" placeholder="بحث بالاسم أو الرقم أو البريد…" style="max-width:320px"></div>
   <div class="card" style="margin-bottom:24px">
-    ${USERS.length?`<div class="ticket-user-table" id="ownerUsersList">${USERS.map(u=>`<div class="item owner-user-row" data-search="${esc(`${u.name||''} ${u.phone||''} ${u.email||''} ${roleLabel(u.role)}`.toLowerCase())}" style="align-items:flex-start">
+    ${USERS_ERROR?`<div class="empty" style="margin-bottom:10px"><b>تعذر تحميل الحسابات</b><div class="sm muted" style="margin-top:6px">${esc(USERS_ERROR)}</div><button class="btn sm primary" data-act="refreshusers" style="margin-top:10px">🔄 إعادة المحاولة</button><div class="xs muted" style="margin-top:8px">تأكد أن متغيرات Supabase موجودة في Vercel وأنك نفذت SUPABASE.sql.</div></div>`:''}
+    ${!USERS_ERROR && USERS.length?`<div class="ticket-user-table" id="ownerUsersList">${USERS.map(u=>`<div class="item owner-user-row" data-search="${esc(`${u.name||''} ${u.phone||''} ${u.email||''} ${roleLabel(u.role)}`.toLowerCase())}" style="align-items:flex-start">
       <div class="ico">${u.role==='owner'?'👑':u.role==='admin'?'🔴':u.role==='moderator'?'🟠':u.role==='support'?'🔵':'👤'}</div>
       <div class="gr" style="min-width:0">
         <b>${esc(u.name||'طالب')}</b>

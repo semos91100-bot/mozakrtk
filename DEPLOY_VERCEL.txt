@@ -18,3 +18,5 @@ Notes:
 - Role assignment is done by student phone number.
 - OWNER is the only role allowed to add/change a student's email.
 - OWNER can open a support ticket; the backend creates a real OWNER user row so the ticket is visible to all staff and replies/notifications can return to OWNER.
+
+6) مهم: على Vercel لا يوجد fallback مشترك بـLocalStorage؛ الحسابات والتذاكر والإشعارات ولوحة OWNER تعتمد على Supabase حتى تظهر بين الأجهزة.

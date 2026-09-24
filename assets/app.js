@@ -442,6 +442,11 @@ document.addEventListener("click",e=>{
 });
 
 document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-act="refreshusers"]');
+  if(b && AUTH.user?.role==='owner'){ fetchUsers(); return; }
+});
+
+document.addEventListener('click',e=>{
   const b=e.target.closest('[data-act="deleteuser"]');
   if(!b || AUTH.user?.role!=='owner') return;
   const id=String(b.dataset.id||'');

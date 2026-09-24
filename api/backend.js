@@ -356,9 +356,14 @@ async function handler(req,res){
       requireUser(req); return ok(res);
     }
     if(action==='users' && method==='GET'){
-      requireManager(req);
-      const rows=await sb('users?select=id,name,email,phone,role,state,created_at,updated_at&order=created_at.desc&limit=500');
-      return ok(res,{users:(rows||[]).map(u=>({id:u.id,name:u.name,email:u.email||'',phone:u.phone||'',role:u.role||'student',grade:u.state?.grade||'',branch:u.state?.branch||'',created_at:u.created_at,updated_at:u.updated_at}))});
+      const actor=requireUser(req);
+      if(actor.role!=='owner') return fail(res,403,'OWNER_ONLY');
+      // لا نعتمد على state هنا حتى لا تتعطل لوحة الحسابات إذا كانت قاعدة البيانات قديمة.
+      const rows=await sb('users?select=id,name,email,phone,role,created_at,updated_at&order=created_at.desc&limit=500');
+      return ok(res,{source:'supabase',total:Array.isArray(rows)?rows.length:0,users:(rows||[]).map(u=>({
+        id:u.id,name:u.name,email:u.email||'',phone:u.phone||'',role:u.role||'student',
+        grade:'',branch:'',created_at:u.created_at,updated_at:u.updated_at
+      }))});
     }
     if(action==='user_role' && method==='POST'){
       const actor=requireUser(req);

@@ -30,6 +30,7 @@ let SUPPORT={tickets:[],isAdmin:false};
 let USERS=[];
 let ADMINCHAT={messages:[]};
 let AUDITLOGS=[];
+let USERS_ERROR='';
 async function fetchAuditLogs(){
   if(!AUTH.user || AUTH.user.role!=='owner') return;
   try{ const d=await apiJSON('audit_logs'); if(d.ok){ AUDITLOGS=d.logs||[]; if((location.hash||'').startsWith('#/admin')) render(); } }catch(e){}
@@ -57,7 +58,16 @@ async function sendAdminChat(text){
 }
 async function fetchUsers(){
   if(!AUTH.user || !isManagerRole(AUTH.user.role)) return;
-  try{ const d=await apiJSON("users"); if(d.ok) USERS=d.users||[]; if((location.hash||"").startsWith("#/admin")) render(); }catch(e){}
+  USERS_ERROR='';
+  try{
+    const d=await apiJSON("users");
+    if(d.ok) USERS=Array.isArray(d.users)?d.users:[];
+    else USERS_ERROR=String(d.error||'تعذر تحميل الحسابات');
+    if((location.hash||"").startsWith("#/admin")) render();
+  }catch(e){
+    USERS_ERROR='تعذر الاتصال بقاعدة البيانات';
+    if((location.hash||"").startsWith("#/admin")) render();
+  }
 }
 function normalizeEducation(state){
   state=state&&typeof state==="object"?state:{};
@@ -85,16 +95,16 @@ async function apiJSON(action,opts={}){
       let d=null; try{d=await r.json();}catch(e){d={ok:false,error:"BAD_RESPONSE"};}
       if(!r.ok && !d.error) d.error="REQUEST_FAILED";
       d.httpStatus=r.status;
-      // لو قاعدة البيانات المشتركة لسه مش مضافة على Vercel، استخدم الـLocal API
-      // كخطة احتياطية حتى يفضل تسجيل الدخول والموقع شغالين. عند تفعيل Supabase
-      // سيتم استخدام الـAPI المشترك تلقائيًا وتظهر التذاكر والإشعارات بين الأجهزة.
       if(d.error !== "BACKEND_NOT_CONFIGURED" && d.error !== "NETWORK_ERROR") return d;
+      // على Vercel يجب استخدام قاعدة البيانات المشتركة فقط. الـLocalStorage مستقل لكل جهاز.
+      if(location.hostname !== "localhost" && location.hostname !== "127.0.0.1") return d;
     }
   }catch(e){
-    if(remoteAllowed && location.hostname !== "localhost") return {ok:false,error:"NETWORK_ERROR"};
+    if(remoteAllowed && location.hostname !== "localhost" && location.hostname !== "127.0.0.1") return {ok:false,error:"NETWORK_ERROR"};
   }
   try{
-    if(window.MozakraLocalAPI && typeof window.MozakraLocalAPI.handle === "function") return await window.MozakraLocalAPI.handle(action,opts);
+    const localAllowed = location.protocol === "file:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
+    if(localAllowed && window.MozakraLocalAPI && typeof window.MozakraLocalAPI.handle === "function") return await window.MozakraLocalAPI.handle(action,opts);
   }catch(e){}
   return {ok:false,error:"NETWORK_ERROR"};
 }
