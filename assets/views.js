@@ -15,12 +15,14 @@ function vDash(){
   const hour=new Date().getHours();
   const greet=hour<12?"صباح الخير":hour<18?"مساء الخير":"مساء الخير";
   const wl=weakLessons(3);
+  const contentReady=S.grade==="third"&&S.branch==="science_biology";
   return `
+  ${!contentReady?`<div class="card" style="margin-bottom:14px;border-color:var(--amber)"><b>📚 مسارك الدراسي: ${esc(educationLabel())}</b><p class="sm muted" style="margin-top:5px">تمت إضافة المرحلة والشعبة للحساب. المحتوى الدراسي الموجود حاليًا في هذه النسخة هو محتوى تالتة ثانوي علمي علوم، وسيظهر لك كما هو لحد ما نضيف محتوى مسارك.</p><a class="btn sm" href="#/profile" style="margin-top:8px">تعديل المرحلة أو الشعبة</a></div>`:""}
   <section class="hero">
     <div class="hero-top">
       <div>
         <h1>${greet} يا ${esc(S.name||"بطل")} 👋</h1>
-        <p class="muted sm">هدفك النهارده ${fmtMin(sch.goal)} — ذاكرت لحد دلوقتي ${fmtMin(m)}</p>
+        <p class="muted sm">${esc(educationLabel())} · هدفك النهارده ${fmtMin(sch.goal)} — ذاكرت لحد دلوقتي ${fmtMin(m)}</p>
         <div class="row" style="margin-top:10px">
           <a class="btn primary" href="#/timer" data-act="startday">ابدأ جدول اليوم</a>
           <a class="btn" href="#/schedule">عدّل الجدول</a>
@@ -317,12 +319,13 @@ function vSupport(){
   if(!u) return `<h1>الدعم الفني</h1><div class="empty"><b>سجّل دخولك الأول</b>لازم يكون عندك حساب عشان تستخدم نظام التذاكر.</div>`;
   const isAdmin=isManagerRole(u.role);
   const isStaff=isStaffRole(u.role);
+  const canOpenTicket=!isStaff || u.role==='owner';
   const list=MozakraTicketing.forCurrentUser();
   if(!window.__activeTicket && list.length) window.__activeTicket=list[0].id;
   return `<div class="ticket-section-title">
-    <div><h1>${isAdmin?"لوحة الدعم الفني — كل التذاكر":"الدعم الفني"}</h1>
-      <p class="muted sm">${isAdmin?"تابع وردّ على تذاكر الطلاب بحسب الأولوية والحالة":"افتح تذكرة جديدة وتابع الردود من فريق الدعم"}</p></div>
-    ${!isStaff?`<button class="btn primary" data-ticket-action="new">+ تذكرة جديدة</button>`:""}
+    <div><h1>${isStaff?"لوحة الدعم الفني — كل التذاكر":"الدعم الفني"}</h1>
+      <p class="muted sm">${isStaff?"تابع وردّ على التذاكر بحسب الأولوية والحالة":"افتح تذكرة جديدة وتابع الردود من فريق الدعم"}</p></div>
+    ${canOpenTicket?`<button class="btn primary" data-ticket-action="new">+ تذكرة جديدة</button>`:""}
   </div>
   ${isAdmin?renderTicketStatsOld():""}
   <div class="support-wrap-old">
@@ -394,12 +397,6 @@ function vAdmin(){
   if(!(AUTH.user&&isManagerRole(AUTH.user.role))) return vNotFound();
   const tk=SUPPORT.tickets||[];
   const open=tk.filter(t=>!['resolved','closed'].includes(t.status)).length;
-  const roleOptions=(targetRole,currentRole)=>{
-    const actor=AUTH.user?.role;
-    let roles=actor==='owner'?['student','support','moderator','admin','owner']:['student','support','moderator'];
-    if(currentRole && !roles.includes(currentRole)) roles=[currentRole,...roles];
-    return roles.map(r=>`<option value="${r}" ${r===currentRole?'selected':''}>${roleLabel(r)}</option>`).join('');
-  };
   return `<h1>🛠️ لوحة التحكم</h1><p class="muted sm" style="margin-bottom:18px">رتبتك الحالية: <b>${roleLabel(AUTH.user.role)}</b> — إدارة المحتوى والتذاكر والرتب حسب الصلاحيات.</p>
 
   ${AUTH.user.role==='owner'||AUTH.user.role==='admin'?`<div class="between" style="margin-bottom:10px"><h2>👨‍🏫 المدرسين (${teachers().length})</h2><button class="btn sm primary" data-act="newteacher">➕ مدرّس جديد</button></div>
@@ -411,14 +408,43 @@ function vAdmin(){
     <label class="field"><span>النص (اختياري)</span><textarea id="n_body" rows="2"></textarea></label>
     <label class="field"><span>لمين؟</span><input id="n_to" value="all" placeholder="all / staff / رقم موبايل / إيميل طالب"></label>
     <button class="btn primary" data-act="sendnotif">إرسال الإشعار</button>
+  </div>`:''}
+
+  ${AUTH.user.role==='owner'?`<h2 style="margin-bottom:10px">👑 أدوات الـ OWNER</h2>
+  <div class="grid g2" style="margin-bottom:24px">
+    <div class="card">
+      <h3 style="margin-bottom:8px">تعيين رتبة برقم الموبايل</h3>
+      <p class="muted sm" style="margin-bottom:10px">اكتب رقم الطالب وحدد الرتبة. الـ OWNER فقط يملك الصلاحية دي.</p>
+      <label class="field"><span>رقم الموبايل</span><input id="role_phone" inputmode="tel" placeholder="01xxxxxxxxx"></label>
+      <label class="field"><span>الرتبة الجديدة</span><select id="role_value">${['student','support','moderator','admin'].map(r=>`<option value="${r}">${roleLabel(r)}</option>`).join('')}</select></label>
+      <button class="btn primary" data-act="setrolephone">تعيين الرتبة</button>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:8px">تسجيل بريد إلكتروني</h3>
+      <p class="muted sm" style="margin-bottom:10px">البريد الإلكتروني للحسابات لا يضيفه إلا الـ OWNER.</p>
+      <label class="field"><span>رقم الموبايل</span><input id="email_phone" inputmode="tel" placeholder="01xxxxxxxxx"></label>
+      <label class="field"><span>البريد الإلكتروني</span><input id="user_email" type="email" placeholder="student@example.com"></label>
+      <button class="btn primary" data-act="setuseremail">حفظ البريد</button>
+    </div>
   </div>
-  <h2 style="margin-bottom:10px">👥 إدارة الرتب</h2>
+  <h2 style="margin-bottom:10px">👥 الحسابات والرتب الحالية</h2>
   <div class="card" style="margin-bottom:24px">
-    ${USERS.length?`<div class="ticket-user-table">${USERS.map(u=>`<div class="item"><div class="ico">${u.role==='owner'?'👑':u.role==='admin'?'🔴':u.role==='moderator'?'🟠':u.role==='support'?'🔵':'👤'}</div><div class="gr"><b>${esc(u.name||'طالب')}</b><span>${esc(u.phone||'بدون رقم')} ${u.email?` · ${esc(u.email)}`:''}</span></div><select data-act="setrole" data-id="${u.id}" ${u.role==='owner'||String(u.id)===String(AUTH.user.id)?'disabled':''}>${roleOptions(u,u.role)}</select></div>`).join('')}</div>`:`<div class="empty"><b>مفيش طلاب مسجلين لسه</b></div>`}
+    ${USERS.length?`<div class="ticket-user-table">${USERS.map(u=>`<div class="item"><div class="ico">${u.role==='owner'?'👑':u.role==='admin'?'🔴':u.role==='moderator'?'🟠':u.role==='support'?'🔵':'👤'}</div><div class="gr"><b>${esc(u.name||'طالب')}</b><span>${esc(u.phone||'بدون رقم')} · ${esc(roleLabel(u.role))}${u.email?` · ${esc(u.email)}`:''}${u.grade?` · ${esc(educationGradeLabel(u.grade))}`:''}${u.branch?` — ${esc(educationBranchLabel(u.grade,u.branch))}`:''}</span></div></div>`).join('')}</div>`:`<div class="empty"><b>مفيش حسابات مسجلين لسه</b></div>`}
   </div>`:''}
 
   <div class="between" style="margin-bottom:10px"><h2>🆘 الدعم الفني</h2>${open?`<span class="chip on">${open} مفتوحة</span>`:""}</div>
   ${tk.length? tk.map(t=>`<div class="card" style="margin-bottom:10px"><div class="between"><b>${esc(t.name||"طالب")}</b><span class="xs muted">${esc(t.email||'بدون إيميل')} · ${esc(t.uid||'')}</span></div><p style="margin-top:6px">${esc(t.message||'')}</p>${t.reply?`<div class="card" style="margin-top:8px;background:var(--card2)"><b>ردّ الفريق</b><p style="margin-top:4px">${esc(t.reply)}</p></div>`:`<div style="margin-top:8px"><textarea data-reply-for="${t.id}" rows="2" placeholder="اكتب ردّك..." style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--card2)"></textarea><button class="btn sm primary" style="margin-top:6px" data-act="replysupport" data-id="${t.id}">رد</button></div>`}</div>`).join(''):`<div class="empty"><b>لسه مفيش رسائل دعم فني</b></div>`}`;
+}
+
+
+function vAdminChat(){
+  if(!(AUTH.user&&isStaffRole(AUTH.user.role))) return vNotFound();
+  const msgs=ADMINCHAT.messages||[];
+  return `<h1>💬 شات الإدارة</h1><p class="muted sm" style="margin-bottom:18px">شات داخلي بين الـ OWNER والإدارة والمشرفين والدعم. الطلاب لا يمكنهم الدخول إليه.</p>
+  <div class="card admin-chat-box" style="margin-bottom:12px;max-height:55vh;overflow:auto">
+    ${msgs.length?msgs.map(m=>`<div class="item" style="align-items:flex-start;margin-bottom:10px"><div class="ico">${m.authorRole==='owner'?'👑':m.authorRole==='admin'?'🔴':m.authorRole==='moderator'?'🟠':'🔵'}</div><div class="gr"><div><b>${esc(m.authorName||'فريق الإدارة')}</b> <span class="xs muted">${esc(roleLabel(m.authorRole))} · ${fmtTicketTimeOld(m.createdAt)}</span></div><div style="margin-top:4px;white-space:pre-wrap">${esc(m.text)}</div></div></div>`).join(''):`<div class="empty"><b>مفيش رسائل لسه</b><div class="sm muted">ابدأ أول رسالة للإدارة.</div></div>`}
+  </div>
+  <form id="adminChatForm" class="card"><label class="field"><span>رسالتك</span><textarea id="adminChatText" rows="3" maxlength="4000" placeholder="اكتب رسالة للإدارة…" required></textarea></label><button class="btn primary" type="submit">إرسال 💬</button></form>`;
 }
 
 function vNotFound(){ return `<div class="empty"><b>الصفحة مش موجودة</b><a class="btn" href="#/dash">رجوع للرئيسية</a></div>`; }

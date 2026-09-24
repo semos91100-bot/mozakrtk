@@ -4,7 +4,7 @@
    ============================================================ */
 const LS="mozakra_v1";
 const DEF={
-  name:"", onboarded:false, dailyGoal:120, sessionLen:40, windows:"مساءً",
+  name:"", onboarded:false, grade:DEFAULT_EDUCATION.grade, branch:DEFAULT_EDUCATION.branch, dailyGoal:120, sessionLen:40, windows:"مساءً",
   weak:[], examDate:"", theme:"", notifOn:true,
   done:{}, sessions:[], attempts:[], streak:0, lastDay:"", badges:[],
   schedule:null, seen:[], custom:{teachers:[],lessons:[],questions:[],files:[]}, updated:0,
@@ -28,6 +28,7 @@ async function fetchNotifications(){
 /* تذاكر الدعم الفني */
 let SUPPORT={tickets:[],isAdmin:false};
 let USERS=[];
+let ADMINCHAT={messages:[]};
 const ROLE_META={owner:{name:"OWNER 👑",color:"var(--bad)"},admin:{name:"ADMIN 🔴",color:"var(--warn)"},moderator:{name:"MODERATOR 🟠",color:"var(--accent)"},support:{name:"SUPPORT 🔵",color:"var(--ok)"},student:{name:"STUDENT 👤",color:"var(--muted)"}};
 const ROLE_LEVEL={student:0,support:1,moderator:2,admin:3,owner:4};
 function roleLabel(role){ return ROLE_META[role]?.name||"STUDENT 👤"; }
@@ -40,12 +41,29 @@ async function fetchSupport(){
   if(!AUTH.user) return;
   try{ const d=await apiJSON("support"); if(d.ok){ SUPPORT={tickets:d.tickets||[],isAdmin:!!d.isAdmin}; render(); } }catch(e){}
 }
+async function fetchAdminChat(){
+  if(!AUTH.user || !isStaffRole(AUTH.user.role)) return;
+  try{ const d=await apiJSON('admin_chat'); if(d.ok){ ADMINCHAT={messages:d.messages||[]}; if((location.hash||'').startsWith('#/admin-chat')) render(); } }catch(e){}
+}
+async function sendAdminChat(text){
+  const d=await apiJSON('admin_chat',{method:'POST',body:JSON.stringify({text})});
+  if(d.ok){ await fetchAdminChat(); return true; }
+  toast(authMessage(d.error)); return false;
+}
 async function fetchUsers(){
   if(!AUTH.user || !isManagerRole(AUTH.user.role)) return;
   try{ const d=await apiJSON("users"); if(d.ok) USERS=d.users||[]; if((location.hash||"").startsWith("#/admin")) render(); }catch(e){}
 }
+function normalizeEducation(state){
+  state=state&&typeof state==="object"?state:{};
+  const grade=EDU.grades[state.grade]?state.grade:DEFAULT_EDUCATION.grade;
+  const fallback=EDU.grades[grade]?.branches?.[0]?.id||DEFAULT_EDUCATION.branch;
+  const branch=EDU.grades[grade]?.branches?.some(b=>b.id===state.branch)?state.branch:fallback;
+  state.grade=grade; state.branch=branch;
+  return state;
+}
 function loadLocal(){
-  try{ const r=localStorage.getItem(LS); if(r) return Object.assign(structuredClone(DEF),JSON.parse(r)); }catch(e){}
+  try{ const r=localStorage.getItem(LS); if(r) return normalizeEducation(Object.assign(structuredClone(DEF),JSON.parse(r))); }catch(e){}
   return structuredClone(DEF);
 }
 function saveLocal(){
@@ -84,11 +102,12 @@ async function refreshSharedData(){
   const route=(location.hash||"#/dash").slice(2).split("?")[0].split("/")[0];
   if(route==="support" || route==="admin") try{ await fetchSupport(); }catch(e){}
   if(route==="admin" && isManagerRole(AUTH.user.role)) try{ await fetchUsers(); }catch(e){}
+  if(route==="admin-chat" && isStaffRole(AUTH.user.role)) try{ await fetchAdminChat(); }catch(e){}
 }
 async function initAuth(){
   try{
     const d=await apiJSON("me");
-    if(d.authenticated){ AUTH.user=d.user; const st=await apiJSON("state"); if(st.ok&&st.state&&Object.keys(st.state).length){ S=Object.assign(structuredClone(DEF),st.state); try{localStorage.setItem(LS,JSON.stringify(S));}catch(e){} } else { await apiJSON("state",{method:"POST",body:JSON.stringify({state:S})}); } }
+    if(d.authenticated){ AUTH.user=d.user; const st=await apiJSON("state"); if(st.ok&&st.state&&Object.keys(st.state).length){ S=normalizeEducation(Object.assign(structuredClone(DEF),st.state)); try{localStorage.setItem(LS,JSON.stringify(S));}catch(e){} } else { await apiJSON("state",{method:"POST",body:JSON.stringify({state:S})}); } }
   }catch(e){}
   AUTH.ready=true; render(); renderAuth();
   if(AUTH.user && !S.onboarded) onboarding();
@@ -98,6 +117,7 @@ async function initAuth(){
     const route=(location.hash||"#/dash").slice(2).split("?")[0].split("/")[0];
     if(route==="support" || route==="admin") fetchSupport();
     if(route==="admin" && isManagerRole(AUTH.user.role)) fetchUsers();
+    if(route==="admin-chat" && isStaffRole(AUTH.user.role)) fetchAdminChat();
   }
 }
 async function loginAccount(identifier,password,kind="student"){
@@ -109,7 +129,7 @@ async function loginAccount(identifier,password,kind="student"){
   if(!d.ok){ AUTH.busy=false; renderAuth(authMessage(d.error)); return; }
   AUTH.user=d.user;
   const st=await apiJSON("state");
-  if(st.ok&&st.state&&Object.keys(st.state).length) S=Object.assign(structuredClone(DEF),st.state);
+  if(st.ok&&st.state&&Object.keys(st.state).length) S=normalizeEducation(Object.assign(structuredClone(DEF),st.state));
   else if(!isStaffRole(AUTH.user.role)) await apiJSON("state",{method:"POST",body:JSON.stringify({state:S})});
   AUTH.busy=false;
   window.__authMode="login"; window.__authKind=isStaffRole(AUTH.user.role)?"staff":"student";
@@ -149,7 +169,7 @@ async function logoutAccount(){
   }
 }
 function authMessage(code){
-  return ({NETWORK_ERROR:"مش قادر أوصل بخدمة الموقع. اتأكد إن الموقع مرفوع على Vercel بشكل صحيح.",BAD_RESPONSE:"حصلت مشكلة في تشغيل خدمة الموقع. أعد تحميل الصفحة وجرب تاني.",TOO_MANY_ATTEMPTS:"محاولات دخول كتير. استنى شوية وجرب تاني.",STORAGE_ERROR:"الموقع مش قادر يحفظ بيانات الحسابات في المتصفح.",EMAIL_EXISTS:"الإيميل ده مسجل بالفعل." ,PHONE_EXISTS:"رقم الموبايل ده مسجل بالفعل.",INVALID_PHONE:"اكتب رقم موبايل مصري صحيح.",USER_NOT_FOUND:"المستخدم مش موجود.",CANNOT_CHANGE_SELF_ROLE:"مش مسموح تغيّر رتبتك بنفسك.",OWNER_PROTECTED:"رتبة OWNER محمية ومحدش يقدر يغيرها.",ROLE_NOT_ALLOWED:"الرتبة دي مش مسموح لك تعيينها.",LOGIN_FAILED:"الإيميل أو كلمة المرور غير صحيحة.",INVALID_EMAIL:"اكتب بريد إلكتروني صحيح.",PASSWORD_SHORT:"كلمة المرور لازم تكون 8 أحرف على الأقل.",PASSWORD_LONG:"كلمة المرور طويلة جدًا.",REQUEST_FAILED:"حصلت مشكلة في الاتصال بالسيرفر.",SERVER_ERROR:"حصل خطأ في السيرفر.",AI_NOT_CONFIGURED:"مدرس AI محتاج تفعيل مفتاح Gemini على السيرفر."}[code]||"حصل خطأ. جرّب تاني.");
+  return ({NETWORK_ERROR:"مش قادر أوصل بخدمة الموقع. اتأكد إن الموقع مرفوع على Vercel بشكل صحيح.",BAD_RESPONSE:"حصلت مشكلة في تشغيل خدمة الموقع. أعد تحميل الصفحة وجرب تاني.",TOO_MANY_ATTEMPTS:"محاولات دخول كتير. استنى شوية وجرب تاني.",STORAGE_ERROR:"الموقع مش قادر يحفظ بيانات الحسابات في المتصفح.",EMAIL_EXISTS:"الإيميل ده مسجل بالفعل." ,PHONE_EXISTS:"رقم الموبايل ده مسجل بالفعل.",INVALID_PHONE:"اكتب رقم موبايل مصري صحيح.",EMAIL_OWNER_ONLY:"إضافة البريد الإلكتروني متاحة للـ OWNER فقط.",OWNER_ONLY:"الصلاحية دي للـ OWNER فقط.",USER_NOT_FOUND:"المستخدم مش موجود.",CANNOT_CHANGE_SELF_ROLE:"مش مسموح تغيّر رتبتك بنفسك.",OWNER_PROTECTED:"رتبة OWNER محمية ومحدش يقدر يغيرها.",ROLE_NOT_ALLOWED:"الرتبة دي مش مسموح لك تعيينها.",LOGIN_FAILED:"الإيميل أو كلمة المرور غير صحيحة.",INVALID_EMAIL:"اكتب بريد إلكتروني صحيح.",PASSWORD_SHORT:"كلمة المرور لازم تكون 8 أحرف على الأقل.",PASSWORD_LONG:"كلمة المرور طويلة جدًا.",REQUEST_FAILED:"حصلت مشكلة في الاتصال بالسيرفر.",SERVER_ERROR:"حصل خطأ في السيرفر.",AI_NOT_CONFIGURED:"مدرس AI محتاج تفعيل مفتاح Gemini على السيرفر."}[code]||"حصل خطأ. جرّب تاني.");
 }
 let cloudTimer=null;
 function cloudPush(){
@@ -318,6 +338,7 @@ const TABS=[{h:"#/dash",i:"🏠",t:"الرئيسية"},{h:"#/schedule",i:"📅",
 function navItems(){
   const items=[...NAV,{sep:1},{h:"#/support",i:"🆘",t:"الدعم الفني"}];
   if(AUTH.user&&isManagerRole(AUTH.user.role)) items.push({h:"#/admin",i:"🛠️",t:"لوحة التحكم"});
+  if(AUTH.user&&isStaffRole(AUTH.user.role)) items.push({h:"#/admin-chat",i:"💬",t:"شات الإدارة"});
   return items;
 }
 function paintNav(){

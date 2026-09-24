@@ -2,6 +2,33 @@
 /* ============================================================
    1) المنهج — للتعديل أو الإضافة عدّل هنا مباشرة
    ============================================================ */
+/* ============================================================
+   اختيار المرحلة والشعبة — ثانوي عام
+   ============================================================ */
+const EDU = {
+  grades: {
+    first:  { label:"أولى ثانوي", branches:[{id:"general",label:"ثانوي عام — عام"}] },
+    second: { label:"تانية ثانوي", branches:[{id:"science",label:"علمي"},{id:"literary",label:"أدبي"}] },
+    third:  { label:"تالتة ثانوي", branches:[{id:"science_biology",label:"علمي علوم"},{id:"science_math",label:"علمي رياضة"},{id:"literary",label:"أدبي"}] }
+  }
+};
+const DEFAULT_EDUCATION={grade:"third",branch:"science_biology"};
+function educationGradeLabel(grade){ return EDU.grades[grade]?.label || EDU.grades.third.label; }
+function educationBranchLabel(grade,branch){
+  const g=EDU.grades[grade]||EDU.grades.third;
+  return g.branches.find(x=>x.id===branch)?.label || g.branches[0]?.label || "عام";
+}
+function educationLabel(grade=S.grade,branch=S.branch){
+  return `${educationGradeLabel(grade)} — ${educationBranchLabel(grade,branch)}`;
+}
+function educationGradeOptions(selected){
+  return Object.entries(EDU.grades).map(([id,g])=>`<option value="${id}" ${id===selected?"selected":""}>${g.label}</option>`).join("");
+}
+function educationBranchOptions(grade,selected){
+  const g=EDU.grades[grade]||EDU.grades.third;
+  return g.branches.map(b=>`<option value="${b.id}" ${b.id===selected?"selected":""}>${b.label}</option>`).join("");
+}
+
 const CUR = {
   fz:{name:"الفيزياء",emoji:"⚡",c:"var(--fz)",units:[
     {n:"الباب الأول: التيار الكهربي وقانون أوم",l:["شدة التيار الكهربي","فرق الجهد والقوة الدافعة","قانون أوم والمقاومة","المقاومة النوعية وتأثير درجة الحرارة","توصيل المقاومات على التوالي والتوازي","قانونا كيرشوف"]},

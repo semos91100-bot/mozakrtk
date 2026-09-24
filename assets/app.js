@@ -143,7 +143,7 @@ async function askAI(text){
   if(!text||AI.busy) return;
   AI.msgs.push({r:"me",c:text}); AI.busy=true; render();
   const turns=AI.msgs.slice(-10).map(m=>({role:m.r==="ai"?"model":"user",content:m.c}));
-  const context=`نسبة إنجاز المنهج ${overall().pct}%، نسبة إجابات الطالب الصحيحة ${accuracy()??"غير معروفة"}%. اسم الطالب ${S.name||"غير معروف"}.`;
+  const context=`المرحلة والشعبة: ${educationLabel()} . نسبة إنجاز المنهج ${overall().pct}%، نسبة إجابات الطالب الصحيحة ${accuracy()??"غير معروفة"}%. اسم الطالب ${S.name||"غير معروف"}.`;
   try{
     const d=await apiJSON("ai",{method:"POST",body:JSON.stringify({messages:turns,context})});
     if(!d.ok){
@@ -152,6 +152,18 @@ async function askAI(text){
     }else AI.msgs.push({r:"ai",c:d.text});
   }catch(e){ AI.msgs.push({r:"ai",c:"حصلت مشكلة في الاتصال بمدرس الـAI. اتأكد إن السيرفر شغال وجرب تاني."}); }
   AI.busy=false; render();
+}
+
+function syncEducationUI(){
+  const label=educationLabel();
+  document.title=`مُذاكرة — ${label}`;
+  const brand= document.querySelector('.brand small');
+  if(brand) brand.textContent=label;
+  const pGrade=$("#p_grade"), pBranch=$("#p_branch"), oGrade=$("#o_grade"), oBranch=$("#o_branch");
+  if(pGrade) pGrade.value=S.grade;
+  if(pBranch){ pBranch.innerHTML=educationBranchOptions(S.grade,S.branch); pBranch.value=S.branch; }
+  if(oGrade) oGrade.value=S.grade;
+  if(oBranch){ oBranch.innerHTML=educationBranchOptions(oGrade?.value||S.grade,oBranch.value||S.branch); }
 }
 
 function syncAuthButton(){
@@ -174,7 +186,7 @@ function renderAuth(message=""){
     ${message?`<div class="card" style="margin-bottom:10px;border-color:var(--bad);color:var(--bad)">${esc(message)}</div>`:""}
     ${!staff&&mode==="signup"?`<label class="field"><span>الاسم</span><input id="auth_name" autocomplete="name" placeholder="اسمك"></label>`:""}
     ${!staff&&mode==="signup"?`<label class="field"><span>رقم الموبايل</span><input id="auth_phone" inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx"></label>`:""}
-    ${!staff&&mode==="signup"?`<label class="field"><span>الإيميل (اختياري)</span><input id="auth_email" type="email" autocomplete="email" placeholder="للاسترجاع والإشعارات فقط"></label>`:""}
+
     ${staff?`<label class="field"><span>البريد الإلكتروني</span><input id="auth_email" type="email" autocomplete="username" placeholder="admin@example.com"></label>`:""}
     ${!staff&&mode==="login"?`<label class="field"><span>رقم الموبايل</span><input id="auth_phone" inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx"></label>`:""}
     <label class="field"><span>كلمة المرور</span><input id="auth_password" type="password" autocomplete="${mode==="login"?"current-password":"new-password"}" placeholder="8 أحرف على الأقل"></label>
@@ -194,7 +206,8 @@ function vProfile(){
     <div class="card">
       <h2 style="margin-bottom:10px">بياناتي</h2>
       <label class="field"><span>الاسم</span><input id="p_name" value="${esc(S.name)}"></label>
-      <label class="field"><span>الصف</span><input value="الثالث الثانوي — علمي علوم" disabled></label>
+      <label class="field"><span>الصف</span><select id="p_grade">${educationGradeOptions(S.grade)}</select></label>
+      <label class="field"><span>الشعبة</span><select id="p_branch">${educationBranchOptions(S.grade,S.branch)}</select></label>
       <label class="field"><span>تاريخ أول امتحان</span><input type="date" id="p_exam" value="${S.examDate}"></label>
       <label class="field"><span>هدف المذاكرة اليومي (دقيقة)</span><input type="number" id="p_goal" value="${S.dailyGoal}"></label>
       <button class="btn primary" data-act="saveprofile">حفظ</button>
@@ -252,7 +265,9 @@ function vSearch(params){
 function onboarding(){
   $("#layer").innerHTML=`<div class="modal"><div class="box">
     <h1>أهلًا بيك في مُذاكرة</h1>
-    <p class="muted sm">3 أسئلة بس عشان أبني لك جدولك.</p>
+    <p class="muted sm">اختار صفك وشعبتك عشان الحساب يعرف مرحلتك التعليمية.</p>
+    <label class="field"><span>صفك الدراسي</span><select id="o_grade">${educationGradeOptions(S.grade)}</select></label>
+    <label class="field"><span>الشعبة</span><select id="o_branch">${educationBranchOptions(S.grade,S.branch)}</select></label>
     <label class="field"><span>اسمك</span><input id="o_name" placeholder="اكتب اسمك"></label>
     <label class="field"><span>تقدر تذاكر كام دقيقة في اليوم؟</span><input id="o_goal" type="number" value="120" step="15"></label>
     <label class="field"><span>تاريخ أول امتحان</span><input id="o_exam" type="date"></label>
@@ -266,6 +281,7 @@ function onboarding(){
    12) الراوتر والأحداث
    ============================================================ */
 function render(){
+  syncEducationUI();
   const h=location.hash||"#/dash";
   const [path,qs]=h.slice(2).split("?");
   const p=new URLSearchParams(qs||"");
@@ -292,12 +308,14 @@ function render(){
     case "search": html=vSearch(p); break;
     case "support": html=vSupport(); break;
     case "admin": html=vAdmin(); break;
+    case "admin-chat": html=vAdminChat(); break;
     default: html=vNotFound();
   }
   view().innerHTML=html;
   paintNav();
   syncAuthButton();
   if(seg[0]==="support" && typeof wireTicketPageOld==="function") wireTicketPageOld();
+  if(seg[0]==="admin-chat") { const f=$("#adminChatForm"); if(f&&!f.dataset.wired){ f.dataset.wired="1"; f.addEventListener("submit",async e=>{ e.preventDefault(); const ta=$("#adminChatText"); const text=ta?.value.trim()||""; if(!text) return; const ok=await sendAdminChat(text); if(ok) ta.value=""; }); } }
   if(seg[0]==="quiz"&&QZ&&!QZ.done) QZ.qs.forEach((q,i)=>{ if(QZ.ans[i]!==undefined){const el=$(`input[name="q${i}"][value="${QZ.ans[i]}"]`); if(el) el.checked=true;} });
   const bell=$("#bellDot"); const unreadServer=(SERVERNOTIFS||[]).filter(n=>!(S.notifSeen||[]).includes(n.id)).length; const unreadTickets=globalThis.MozakraTicketing?MozakraTicketing.unread():0; if(bell) bell.hidden=!((S.notifOn&&notifications().length)||unreadServer||unreadTickets);
   window.scrollTo(0,0);
@@ -306,6 +324,7 @@ addEventListener("hashchange",()=>{
   render();
   const route=(location.hash||"#/dash").slice(2).split("?")[0].split("/")[0];
   if(route==="admin") fetchSupport();
+  if(route==="admin-chat") fetchAdminChat();
 });
 
 function applyTheme(){ if(S.theme) document.documentElement.dataset.theme=S.theme; else delete document.documentElement.dataset.theme; }
@@ -338,7 +357,7 @@ document.addEventListener("click",e=>{
     case "aiquick": askAI(b.dataset.q); break;
     case "aiclear": AI.msgs=[]; render(); break;
     case "logout": logoutAccount(); break;
-    case "saveprofile": S.name=$("#p_name").value.trim(); S.examDate=$("#p_exam").value; S.dailyGoal=+$("#p_goal").value||120; saveLocal(); toast("تم الحفظ"); render(); break;
+    case "saveprofile": { S.name=$("#p_name").value.trim(); S.grade=$("#p_grade").value; S.branch=$("#p_branch").value; S.examDate=$("#p_exam").value; S.dailyGoal=+$("#p_goal").value||120; normalizeEducation(S); saveLocal(); toast("تم الحفظ"); render(); break; }
     case "theme": S.theme=b.dataset.v; applyTheme(); saveLocal(); render(); break;
     case "notif": S.notifOn=!S.notifOn; saveLocal(); render(); break;
     case "savesettings": S.sessionLen=+$("#s_len").value||40; S.windows=$("#s_win").value; TM.total=0; saveLocal(); toast("تم الحفظ"); render(); break;
@@ -348,7 +367,7 @@ document.addEventListener("click",e=>{
     case "opentask":{ const t=S.schedule.tasks[+b.dataset.i]; if(t) location.hash="#/lesson/"+t.lesson; break; }
     case "bell":{ break; }
     case "finishonboard":{
-      S.name=$("#o_name").value.trim()||"بطل"; S.dailyGoal=+$("#o_goal").value||120; S.examDate=$("#o_exam").value;
+      S.name=$("#o_name").value.trim()||"بطل"; S.grade=$("#o_grade").value; S.branch=$("#o_branch").value; normalizeEducation(S); S.dailyGoal=+$("#o_goal").value||120; S.examDate=$("#o_exam").value;
       S.onboarded=true; $("#layer").innerHTML=""; buildSchedule(); render(); break;
     }
     /* اختيار المدرّس */
@@ -369,7 +388,7 @@ document.addEventListener("click",e=>{
       if(!msg){ toast("اكتب رسالتك الأول"); break; }
       (async()=>{
         const d=await apiJSON("support",{method:"POST",body:JSON.stringify({message:msg})});
-        if(d.ok){ toast("اتبعتت رسالتك"); await fetchSupport(); render(); } else toast("حصلت مشكلة، جرّب تاني");
+        if(d.ok){ toast("اتبعتت رسالتك"); await fetchSupport(); render(); } else toast(authMessage(d.error));
       })(); break;
     }
     /* لوحة التحكم — المدرسين */
@@ -416,15 +435,24 @@ document.addEventListener("click",e=>{
       if(!reply){ toast("اكتب الرد الأول"); break; }
       (async()=>{
         const d=await apiJSON("support_reply",{method:"POST",body:JSON.stringify({id,reply})});
-        if(d.ok){ toast("اترد على الطالب"); await fetchSupport(); render(); } else toast("حصلت مشكلة، جرّب تاني");
+        if(d.ok){ toast("اترد على الطالب"); await fetchSupport(); render(); } else toast(authMessage(d.error));
       })(); break;
     }
   }
 });
 
+document.addEventListener('click',e=>{ const b=e.target.closest('[data-act="setrolephone"],[data-act="setuseremail"]'); if(!b||AUTH.user?.role!=='owner') return; (async()=>{ if(b.dataset.act==='setrolephone'){const phone=$("#role_phone")?.value.trim()||'';const role=$("#role_value")?.value||'student';if(!phone){toast('اكتب رقم الموبايل');return;}const d=await apiJSON('user_role',{method:'POST',body:JSON.stringify({phone,role})});toast(d.ok?'تم تعيين الرتبة':authMessage(d.error));if(d.ok){await fetchUsers();render();}}else{const phone=$("#email_phone")?.value.trim()||'';const email=$("#user_email")?.value.trim()||'';if(!phone||!email){toast('اكتب رقم الموبايل والبريد');return;}const d=await apiJSON('user_email',{method:'POST',body:JSON.stringify({phone,email})});toast(d.ok?'تم حفظ البريد الإلكتروني':authMessage(d.error));if(d.ok){await fetchUsers();render();}}})();});
+
 document.addEventListener("change",e=>{
+  const grade=e.target.closest("#p_grade,#o_grade");
+  if(grade){
+    const branchId=grade.id==="p_grade"?"#p_branch":"#o_branch";
+    const b=$(branchId);
+    if(b) b.innerHTML=educationBranchOptions(grade.value, null);
+    return;
+  }
   const roleSelect=e.target.closest('select[data-act="setrole"]');
-  if(!roleSelect || !isManagerRole(AUTH.user?.role)) return;
+  if(!roleSelect || AUTH.user?.role!=='owner') return;
   const id=String(roleSelect.dataset.id||""); const role=String(roleSelect.value||"student");
   (async()=>{
     const d=await apiJSON("user_role",{method:"POST",body:JSON.stringify({id,role})});
@@ -463,7 +491,7 @@ document.addEventListener("click",e=>{
   const submit=e.target.closest("[data-auth-submit]");
   if(submit){
     const mode=submit.dataset.authSubmit, kind=window.__authKind||"student", pass=$("#auth_password")?.value||"";
-    if(mode==="signup") signupAccount($("#auth_name")?.value.trim()||"",$("#auth_phone")?.value.trim()||"",pass,$("#auth_email")?.value.trim()||"");
+    if(mode==="signup") signupAccount($("#auth_name")?.value.trim()||"",$("#auth_phone")?.value.trim()||"",pass);
     else loginAccount(kind==="staff"?$("#auth_email")?.value.trim():$("#auth_phone")?.value.trim(),pass,kind);
   }
 });

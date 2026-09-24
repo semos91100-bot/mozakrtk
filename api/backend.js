@@ -7,12 +7,19 @@ const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY |
 const SESSION_SECRET = String(process.env.SESSION_SECRET || (SUPABASE_SERVICE_ROLE_KEY ? crypto.createHash('sha256').update(SUPABASE_SERVICE_ROLE_KEY).digest('hex') : ''));
 const OWNER_EMAIL = String(process.env.OWNER_EMAIL || process.env.ADMIN_EMAIL || 'semos91100@gmail.com').trim().toLowerCase();
 const OWNER_PASSWORD = String(process.env.OWNER_PASSWORD || process.env.ADMIN_PASSWORD || 'alton112233');
+const OWNER_ACCOUNTS = [
+  { email: OWNER_EMAIL, name: 'ALTON', password: OWNER_PASSWORD },
+  // OWNER إضافي 1: اكتب البريد والاسم وكلمة المرور هنا أو استخدم OWNER_2_* في Vercel
+  { email: String(process.env.OWNER_2_EMAIL || '').trim().toLowerCase(), name: String(process.env.OWNER_2_NAME || 'OWNER 2').trim(), password: String(process.env.OWNER_2_PASSWORD || '') },
+  // OWNER إضافي 2: اكتب البريد والاسم وكلمة المرور هنا أو استخدم OWNER_3_* في Vercel
+  { email: String(process.env.OWNER_3_EMAIL || '').trim().toLowerCase(), name: String(process.env.OWNER_3_NAME || 'OWNER 3').trim(), password: String(process.env.OWNER_3_PASSWORD || '') }
+].filter(x => x.email && x.password);
+const OWNER_EMAILS = new Set(OWNER_ACCOUNTS.map(x => x.email));
 const ADMIN_EMAIL = OWNER_EMAIL;
 
 const ROLE_LEVEL = Object.freeze({student:0, support:1, moderator:2, admin:3, owner:4});
 const STAFF_ROLES = new Set(['support','moderator','admin','owner']);
 const MANAGER_ROLES = new Set(['admin','owner']);
-const ASSIGNABLE_BY_ADMIN = new Set(['student','support','moderator']);
 const ALL_ROLES = new Set(Object.keys(ROLE_LEVEL));
 
 function configured(){ return !!(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY && SESSION_SECRET); }
@@ -36,7 +43,7 @@ function hashPassword(text){ return crypto.createHash('sha256').update(String(te
 function roleLevel(role){ return ROLE_LEVEL[String(role||'student')] ?? -1; }
 function isStaff(role){ return STAFF_ROLES.has(String(role||'')); }
 function isManager(role){ return MANAGER_ROLES.has(String(role||'')); }
-function canManageUsers(role){ return isManager(role); }
+function canManageUsers(role){ return String(role||'') === 'owner'; }
 function canManageTicket(role){ return isStaff(role); }
 function signPayload(payload){
   const raw = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -117,6 +124,19 @@ async function getStudentByPhone(p){
   const rows=await sb(`users?select=id,email,phone,name,password_hash,role,state,created_at,updated_at&phone=eq.${eq(phone)}&limit=1`);
   return rows?.[0]||null;
 }
+
+async function ensureOwnerUser(owner=OWNER_ACCOUNTS[0]){
+  let u=await getStudentByEmail(owner.email);
+  if(u){
+    if(u.role!=='owner'){
+      await sb(`users?id=eq.${eq(u.id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({role:'owner',name:u.name||owner.name||'OWNER',updated_at:now()})});
+      u={...u,role:'owner'};
+    }
+    return u;
+  }
+  const inserted=await sb('users',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({email:owner.email,phone:null,name:owner.name||'OWNER',role:'owner',password_hash:hashPassword(owner.password),state:{},created_at:now(),updated_at:now()})});
+  return inserted?.[0]||null;
+}
 async function findUser(identifier){
   const raw=String(identifier||'').trim();
   if(raw.includes('@')) return getStudentByEmail(email(raw));
@@ -151,9 +171,13 @@ async function handler(req,res){
       const identifier=String(body.identifier||body.phone||body.email||'').trim();
       const pass=String(body.password||'');
       const e=email(identifier);
-      if(e && e===OWNER_EMAIL){
-        if(pass!==OWNER_PASSWORD) return fail(res,401,'LOGIN_FAILED');
-        const u={id:-1,email:OWNER_EMAIL,phone:'',name:'Owner',role:'owner'}; setSession(res,u); return ok(res,{authenticated:true,user:u});
+      if(e && OWNER_EMAILS.has(e)){
+        const ownerCfg=OWNER_ACCOUNTS.find(x=>x.email===e);
+        if(!ownerCfg || pass!==ownerCfg.password) return fail(res,401,'LOGIN_FAILED');
+        const owner=await ensureOwnerUser(ownerCfg);
+        if(!owner) return fail(res,500,'SERVER_ERROR');
+        const safe=safeUser({...owner,role:'owner',email:ownerCfg.email,name:ownerCfg.name||owner.name||'OWNER'});
+        setSession(res,safe); return ok(res,{authenticated:true,user:safe});
       }
       const u=await findUser(identifier);
       if(!u || u.password_hash!==hashPassword(pass)) return fail(res,401,'LOGIN_FAILED');
@@ -164,6 +188,7 @@ async function handler(req,res){
       if(!validPhone(p)) return fail(res,422,'INVALID_PHONE');
       if(pass.length<8) return fail(res,422,'PASSWORD_SHORT');
       if(pass.length>200) return fail(res,422,'PASSWORD_LONG');
+      if(e) return fail(res,403,'EMAIL_OWNER_ONLY');
       if(!validEmail(e)) return fail(res,422,'INVALID_EMAIL');
       const byPhone=await getStudentByPhone(p); if(byPhone) return fail(res,409,'PHONE_EXISTS');
       if(e){ const byEmail=await getStudentByEmail(e); if(byEmail || e===OWNER_EMAIL) return fail(res,409,'EMAIL_EXISTS'); }
@@ -228,7 +253,7 @@ async function handler(req,res){
       return ok(res,{tickets:out,isAdmin:isStaff(u.role)});
     }
     if(action==='support' && method==='POST'){
-      const u=requireUser(req); if(isStaff(u.role)) return fail(res,403,'FORBIDDEN');
+      const u=requireUser(req); if(isStaff(u.role) && u.role!=='owner') return fail(res,403,'FORBIDDEN');
       const msg=String(body.message||'').trim().slice(0,5000); if(!msg) return fail(res,422,'EMPTY_MESSAGE');
       const id=`TCK-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
       const created=now();
@@ -245,6 +270,20 @@ async function handler(req,res){
       await sb('notifications',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({title:'رد جديد على تذكرتك',body:'فريق الدعم رد على تذكرتك.',to_user_id:t.user_id,to_email:t.user_email||null,created_at:at})});
       return ok(res);
     }
+    if(action==='admin_chat' && method==='GET'){
+      const u=requireStaff(req);
+      const rows=await sb('admin_chat_messages?select=id,user_id,author_name,author_role,text,created_at&order=created_at.asc&limit=300');
+      return ok(res,{messages:(rows||[]).map(m=>({id:m.id,userId:m.user_id,authorName:m.author_name,authorRole:m.author_role,text:m.text,createdAt:m.created_at}))});
+    }
+    if(action==='admin_chat' && method==='POST'){
+      const u=requireStaff(req);
+      const text=String(body.text||'').trim().slice(0,4000);
+      if(!text) return fail(res,422,'EMPTY_MESSAGE');
+      const at=now();
+      const inserted=await sb('admin_chat_messages',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({user_id:u.id,author_name:u.name||'فريق الإدارة',author_role:u.role,text,created_at:at})});
+      await sb('notifications',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({title:'رسالة جديدة في شات الإدارة',body:`${u.name||'فريق الإدارة'}: ${text.slice(0,120)}`,to_role:'staff',created_at:at})});
+      return ok(res,{message:inserted?.[0]||{id:null,user_id:u.id,author_name:u.name||'فريق الإدارة',author_role:u.role,text,created_at:at}});
+    }
     if(action==='ticket_list' && method==='GET'){
       const u=requireUser(req);
       let query='tickets?select=id,user_id,user_name,user_email,subject,category,priority,status,assigned_role,created_at,updated_at&order=updated_at.desc&limit=200';
@@ -253,7 +292,7 @@ async function handler(req,res){
       return ok(res,{tickets:out.filter(Boolean),isAdmin:isStaff(u.role)});
     }
     if(action==='ticket_create' && method==='POST'){
-      const u=requireUser(req); if(isStaff(u.role)) return fail(res,403,'FORBIDDEN');
+      const u=requireUser(req); if(isStaff(u.role) && u.role!=='owner') return fail(res,403,'FORBIDDEN');
       const id=String(body.id||'').slice(0,80) || `TCK-${Date.now().toString(36).toUpperCase()}`;
       const subject=String(body.subject||'').trim().slice(0,180), category=String(body.category||'other'), priority=String(body.priority||'medium'), message=String(body.message||'').trim().slice(0,5000);
       if(!subject||!message) return fail(res,422,'BAD_REQUEST');
@@ -289,19 +328,32 @@ async function handler(req,res){
     }
     if(action==='users' && method==='GET'){
       requireManager(req);
-      const rows=await sb('users?select=id,name,email,phone,role,created_at,updated_at&order=created_at.desc&limit=500');
-      return ok(res,{users:(rows||[]).map(u=>({id:u.id,name:u.name,email:u.email||'',phone:u.phone||'',role:u.role||'student',created_at:u.created_at,updated_at:u.updated_at}))});
+      const rows=await sb('users?select=id,name,email,phone,role,state,created_at,updated_at&order=created_at.desc&limit=500');
+      return ok(res,{users:(rows||[]).map(u=>({id:u.id,name:u.name,email:u.email||'',phone:u.phone||'',role:u.role||'student',grade:u.state?.grade||'',branch:u.state?.branch||'',created_at:u.created_at,updated_at:u.updated_at}))});
     }
     if(action==='user_role' && method==='POST'){
-      const actor=requireManager(req); const id=String(body.id||''), role=String(body.role||'student');
-      if(!id||!ALL_ROLES.has(role)) return fail(res,422,'BAD_ROLE');
-      const target=await getUserById(id); if(!target) return fail(res,404,'USER_NOT_FOUND');
-      if(String(target.id)===String(actor.id)) return fail(res,403,'CANNOT_CHANGE_SELF_ROLE');
+      const actor=requireUser(req);
+      if(actor.role!=='owner') return fail(res,403,'OWNER_ONLY');
+      const rawPhone=String(body.phone||'').trim(), id=String(body.id||''), role=String(body.role||'student');
+      if((!rawPhone&&!id)||!ALL_ROLES.has(role)||role==='owner') return fail(res,422,'ROLE_NOT_ALLOWED');
+      const target=rawPhone ? await getStudentByPhone(rawPhone) : await getUserById(id);
+      if(!target) return fail(res,404,'USER_NOT_FOUND');
       if(target.role==='owner') return fail(res,403,'OWNER_PROTECTED');
-      if(actor.role==='admin' && !ASSIGNABLE_BY_ADMIN.has(role)) return fail(res,403,'ROLE_NOT_ALLOWED');
-      await sb(`users?id=eq.${eq(id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({role,updated_at:now()})});
+      await sb(`users?id=eq.${eq(target.id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({role,updated_at:now()})});
       await sb('notifications',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({title:'تم تحديث رتبتك',body:`تم تعيين رتبتك إلى ${role}.`,to_user_id:target.id,to_email:target.email||null,created_at:now()})});
-      return ok(res);
+      return ok(res,{user:{id:target.id,name:target.name,phone:target.phone,email:target.email||'',role}});
+    }
+    if(action==='user_email' && method==='POST'){
+      const actor=requireUser(req);
+      if(actor.role!=='owner') return fail(res,403,'OWNER_ONLY');
+      const phone=String(body.phone||'').trim(), e=email(body.email);
+      if(!validPhone(phone)) return fail(res,422,'INVALID_PHONE');
+      if(!e || !validEmail(e)) return fail(res,422,'INVALID_EMAIL');
+      if(OWNER_EMAILS.has(e)) return fail(res,409,'EMAIL_EXISTS');
+      const target=await getStudentByPhone(phone); if(!target) return fail(res,404,'USER_NOT_FOUND');
+      const existing=await getStudentByEmail(e); if(existing && String(existing.id)!==String(target.id)) return fail(res,409,'EMAIL_EXISTS');
+      await sb(`users?id=eq.${eq(target.id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({email:e,updated_at:now()})});
+      return ok(res,{user:{id:target.id,name:target.name,phone:target.phone,email:e,role:target.role}});
     }
     return fail(res,404,'NOT_FOUND');
   }catch(e){

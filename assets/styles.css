@@ -253,3 +253,5 @@ ul.clean li{margin-bottom:6px}
 .ticket-empty{height:auto}
 @media(max-width:900px){.support-wrap-old{grid-template-columns:1fr}.ticket-list-old{max-height:none}.ticket-detail-old{min-height:60vh}}
 @media(max-width:600px){.ticket-section-title{align-items:flex-start}.ticket-msg-old{max-width:88%}.ticket-composer-old{flex-direction:column}.ticket-controls-old{width:100%}.ticket-controls-old select{flex:1}}
+
+.admin-chat-box{scroll-behavior:smooth}

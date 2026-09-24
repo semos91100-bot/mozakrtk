@@ -27,3 +27,13 @@ OWNER > ADMIN > MODERATOR > SUPPORT > STUDENT
 يمكن إرسالها للجميع (all)، فريق الدعم (staff)، أو لطالب برقم الموبايل/الإيميل.
 
 مهم: لا تضع SUPABASE_SERVICE_ROLE_KEY داخل ملفات frontend أو GitHub.
+
+OWNER ACCOUNTS
+- Primary OWNER: semos91100@gmail.com — display name ALTON.
+- Optional OWNER 2: set OWNER_2_EMAIL, OWNER_2_NAME, OWNER_2_PASSWORD in Vercel.
+- Optional OWNER 3: set OWNER_3_EMAIL, OWNER_3_NAME, OWNER_3_PASSWORD in Vercel.
+- Blank optional OWNER variables remain disabled.
+
+ADMIN CHAT
+- Run the updated SUPABASE.sql to create admin_chat_messages.
+- The chat is available only to staff roles and is accessible from "شات الإدارة".
