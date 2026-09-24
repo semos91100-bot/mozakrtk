@@ -59,6 +59,8 @@ async function sb(table, { method = 'GET', query = '', body, ret = false } = {})
   return t ? JSON.parse(t) : null;
 }
 const eq = (k, v) => `${k}=eq.${encodeURIComponent(v)}`;
+// PostgREST's ilike keeps legacy mixed-case identifiers usable; escape LIKE wildcards.
+const ilike = (k, v) => `${k}=ilike.${encodeURIComponent(String(v).replace(/[\\%_*]/g, '\\$&'))}`;
 const find = async (table, filters, extra = '') =>
   (await sb(table, { query: [...filters, extra].filter(Boolean).join('&') })) || [];
 const one = async (table, filters) => (await find(table, filters, 'limit=1'))[0] || null;
@@ -161,9 +163,9 @@ async function audit(actor, action, target, details = {}) {
 async function findByIdentifier(idf) {
   const s = clean(idf, 120);
   if (!s) return null;
-  if (s.includes('@')) return (await one('users', [eq('email', s)])) || (await one('users', [eq('email', s.toLowerCase())]));
+  if (s.includes('@')) return (await one('users', [eq('email', s)])) || (await one('users', [eq('email', s.toLowerCase())])) || (await one('users', [ilike('email', s)]));
   for (const v of phoneVariants(s)) { const u = await one('users', [eq('phone', v)]); if (u) return u; }
-  return (await one('users', [eq('username', s)])) || (await one('users', [eq('username', s.toLowerCase())]));
+  return (await one('users', [eq('username', s)])) || (await one('users', [eq('username', s.toLowerCase())])) || (await one('users', [ilike('username', s)]));
 }
 
 /* ---------- actions ---------- */

@@ -1,5 +1,5 @@
 'use strict';
-const http=require('http'), fs=require('fs'), path=require('path');
+const http=require('http'), fs=require('fs'), path=require('path'), crypto=require('crypto');
 process.env.SUPABASE_URL='http://127.0.0.1:4173/rest-mock';
 process.env.SUPABASE_SERVICE_ROLE_KEY='mock-key';
 process.env.SESSION_SECRET='test-secret';
@@ -8,7 +8,10 @@ process.env.OWNER_PASSWORD='test-owner-pass';
 const handler=require('./api/backend.js');
 const db={users:[],notifications:[],tickets:[],ticket_messages:[],admin_chat_messages:[],audit_logs:[],site_content:[]};
 const seq={users:1,notifications:1,ticket_messages:1,admin_chat_messages:1,audit_logs:1};
-function qmatch(row,p){ for(const [k,v0] of p){ if(['select','order','limit','offset'].includes(k)) continue; let v=v0; if(v.startsWith('eq.')){v=decodeURIComponent(v.slice(3)); if(String(row[k]??'')!==v) return false;} } return true; }
+const legacySalt='legacy-test-salt';
+db.users.push({id:900,email:'Legacy@Test.com',username:'Legacy_User',name:'Legacy User',role:'student',password_hash:`s1$${legacySalt}$${crypto.scryptSync('legacy-pass',legacySalt,32).toString('hex')}`,state:{},created_at:new Date().toISOString()});
+seq.users=901;
+function qmatch(row,p){ for(const [k,v0] of p){ if(['select','order','limit','offset'].includes(k)) continue; let v=v0; if(v.startsWith('eq.')){v=decodeURIComponent(v.slice(3)); if(String(row[k]??'')!==v) return false;} else if(v.startsWith('ilike.')){v=decodeURIComponent(v.slice(6)).replace(/\\([\\%_*])/g,'$1'); if(String(row[k]??'').toLowerCase()!==v.toLowerCase()) return false;} } return true; }
 function mockFetch(url,opts={}){return new Promise(async(resolve)=>{const u=new URL(url); if(!u.pathname.startsWith('/rest-mock/rest/v1/')) return resolve(new Response(JSON.stringify({message:'bad mock url'}),{status:500})); const tail=u.pathname.replace('/rest-mock/rest/v1/',''); const table=tail; const p=[...u.searchParams.entries()]; const body=opts.body?JSON.parse(opts.body):null; const method=opts.method||'GET'; const rows=db[table]; if(!rows) return resolve(new Response(JSON.stringify({message:'table missing',code:'42P01'}),{status:404}));
 if(method==='GET'){let out=rows.filter(r=>qmatch(r,p));const order=u.searchParams.get('order');if(order){const [f,d='asc']=order.split('.');out.sort((a,b)=>new Date(a[f]||0)-new Date(b[f]||0));if(d==='desc')out.reverse();}const lim=u.searchParams.get('limit');if(lim)out=out.slice(0,Number(lim)); return resolve(new Response(JSON.stringify(out),{status:200,headers:{'content-type':'application/json'}}));}
 if(method==='POST'){const arr=Array.isArray(body)?body:[body]; if(table==='users'){for(const x of arr){if(x.username&&rows.some(r=>r.username&&r.username.toLowerCase()===x.username.toLowerCase()))return resolve(new Response(JSON.stringify({message:'username unique',code:'23505'}),{status:409}));if(x.phone&&rows.some(r=>r.phone===x.phone))return resolve(new Response(JSON.stringify({message:'phone unique',code:'23505'}),{status:409}));if(x.email&&rows.some(r=>r.email&&r.email.toLowerCase()===x.email.toLowerCase()))return resolve(new Response(JSON.stringify({message:'email unique',code:'23505'}),{status:409}));}}

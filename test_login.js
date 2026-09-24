@@ -10,6 +10,8 @@ const ok=(n,c)=>{console.log((c?'PASS ':'FAIL ')+n);if(!c)process.exitCode=1;};
  cookie='';
  for(const id of ['01012345678','201012345678','+201012345678','ali_1','ALI_1']){[s,j]=await call('login',{identifier:id,password:'123456'});ok('login '+id,s===200&&j.ok);cookie='';}
  [s,j]=await call('login',{identifier:'01012345678',password:'bad'});ok('wrong password 401',s===401);
+ [s,j]=await call('login',{identifier:'legacy@test.com',password:'legacy-pass'});ok('legacy mixed-case email login',s===200&&j.ok);cookie='';
+ [s,j]=await call('login',{identifier:'legacy_user',password:'legacy-pass'});ok('legacy mixed-case username login',s===200&&j.ok);cookie='';
  [s,j]=await call('login',{identifier:'semos91100@gmail.com',password:'test-owner-pass'});ok('owner login',s===200&&j.user.role==='owner');
  [s,j]=await call('accounts');ok('owner accounts',s===200&&j.accounts.length>=2&&!('password_hash' in j.accounts[0]));
  const stu=j.accounts.find(a=>a.username==='ali_1');
