@@ -12,6 +12,8 @@ const DEF={
 };
 let S = loadLocal();
 let AUTH={user:null,ready:false,busy:false};
+// expose the same auth object to modules loaded in separate script scopes
+globalThis.AUTH=AUTH;
 /* محتوى الموقع اللي بيضيفه المشرف (مدرّسين إضافيين/معدّلين) — مشترك بين كل الطلاب */
 let SITECONTENT={teachers:[],removed:[]};
 async function fetchContent(){

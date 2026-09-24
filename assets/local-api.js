@@ -200,7 +200,7 @@
     return db;
   }
   let DB=load();
-  const current=()=>{ const u=globalThis.AUTH&&AUTH.user; return u?{id:String(u.id),name:u.name||"طالب",email:u.email||"",role:u.role||"student"}:null; };
+  const current=()=>{ const a=(typeof AUTH!=="undefined"?AUTH:globalThis.AUTH); const u=a&&a.user; return u?{id:String(u.id),name:u.name||"طالب",email:u.email||"",role:u.role||"student"}:null; };
   const uid=()=>`TCK-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2,6).toUpperCase()}`;
   const now=()=>new Date().toISOString();
   const sortDesc=(a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt);
@@ -214,7 +214,7 @@
   }
   async function syncRemote(){
     try{
-      if(typeof apiJSON!=="function" || !AUTH || !AUTH.user) return false;
+      const a=(typeof AUTH!=="undefined"?AUTH:globalThis.AUTH); if(typeof apiJSON!=="function" || !a || !a.user) return false;
       const d=await apiJSON("ticket_list");
       if(!d.ok) return false;
       const remote=(d.tickets||[]).map(normalizeRemote).filter(Boolean);
@@ -225,7 +225,7 @@
         const oldRead=new Map(DB.notifications.filter(n=>String(n.id).startsWith("server-")).map(n=>[String(n.id),!!n.read]));
         const rn=(nd.notifications||[]).map(n=>{
           const id=`server-${n.id}`;
-          return {id,read:oldRead.get(id)||false,at:new Date(Number(n.created_at||0)*1000).toISOString(),title:n.title,body:n.body,audience:(String(n.to||"")===(AUTH.user.role==="admin"?"all-admins":AUTH.user.email)||n.to==="all")?(AUTH.user.role==="admin"?"admin":"user"):"",userId:String(AUTH.user.id)};
+          return {id,read:oldRead.get(id)||false,at:new Date(Number(n.created_at||0)*1000).toISOString(),title:n.title,body:n.body,audience:(String(n.to||"")===(a.user.role==="admin"?"all-admins":a.user.email)||n.to==="all")?(a.user.role==="admin"?"admin":"user"):"",userId:String(a.user.id)};
         }).filter(n=>n.audience);
         DB.notifications=rn.concat(DB.notifications.filter(n=>!String(n.id).startsWith("server-")));
       }
