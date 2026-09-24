@@ -278,9 +278,10 @@ A.notify = async (req, res, b) => {
   return { ok: true };
 };
 A.notifications = async (req) => {
-  const u = need(await sessionUser(req));
-  const parts = [find('notifications', [eq('to_user_id', u.id)]), find('notifications', [eq('to_role', 'all')])];
-  if (rank(u.role) >= 1) parts.push(find('notifications', [eq('to_role', 'staff')]));
+  const u = await sessionUser(req); // الزائر (بدون تسجيل) يشوف الإشعارات العامة فقط
+  const parts = [find('notifications', [eq('to_role', 'all')])];
+  if (u) parts.push(find('notifications', [eq('to_user_id', u.id)]));
+  if (u && rank(u.role) >= 1) parts.push(find('notifications', [eq('to_role', 'staff')]));
   const rows = (await Promise.all(parts)).flat().sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   return { ok: true, notifications: rows.slice(0, 100) };
 };
