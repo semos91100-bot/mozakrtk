@@ -16,11 +16,21 @@ const OWNER_ACCOUNTS = [
 ].filter(x => x.email && x.password);
 const OWNER_EMAILS = new Set(OWNER_ACCOUNTS.map(x => x.email));
 const ADMIN_EMAIL = OWNER_EMAIL;
+const GEMINI_API_KEY = String(process.env.GEMINI_API_KEY || '').trim();
+const GEMINI_MODEL = String(process.env.GEMINI_MODEL || 'gemini-3.8-flash').trim();
 
 const ROLE_LEVEL = Object.freeze({student:0, support:1, moderator:2, admin:3, owner:4});
 const STAFF_ROLES = new Set(['support','moderator','admin','owner']);
 const MANAGER_ROLES = new Set(['admin','owner']);
 const ALL_ROLES = new Set(Object.keys(ROLE_LEVEL));
+
+// تعريف المراحل والشعب على السيرفر نفسه حتى لا يفشل التسجيل بسبب اختلاف
+// بيانات الواجهة عن الـ API. القيم هنا مطابقة لـ assets/data.js.
+const EDU_GRADES_SERVER = Object.freeze({
+  first: { label: 'أولى ثانوي', branches: [{id:'general', label:'ثانوي عام — عام'}] },
+  second: { label: 'تانية ثانوي', branches: [{id:'science', label:'علمي'}, {id:'literary', label:'أدبي'}] },
+  third: { label: 'تالتة ثانوي', branches: [{id:'science_biology', label:'علمي علوم'}, {id:'science_math', label:'علمي رياضة'}, {id:'literary', label:'أدبي'}] }
+});
 
 function configured(){ return !!(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY && SESSION_SECRET); }
 function send(res, status, data, extraHeaders={}){
@@ -171,6 +181,21 @@ async function ticketWithMessages(id){
   const msgs=await sb(`ticket_messages?select=id,ticket_id,from_role,author_name,text,created_at&ticket_id=eq.${eq(id)}&order=created_at.asc`);
   return {...t,messages:(msgs||[]).map(m=>({id:m.id,from:m.from_role,authorName:m.author_name,text:m.text,at:m.created_at}))};
 }
+async function geminiGenerate(messages, context=''){
+  if(!GEMINI_API_KEY) throw Object.assign(new Error('AI_NOT_CONFIGURED'),{code:'AI_NOT_CONFIGURED',status:503});
+  const safeMessages=Array.isArray(messages)?messages.slice(-10).map(m=>({role:m?.role==='model'?'model':'user',parts:[{text:String(m?.content||'').slice(0,4000)}]})).filter(x=>x.parts[0].text):[];
+  if(!safeMessages.length) throw Object.assign(new Error('EMPTY_MESSAGE'),{code:'EMPTY_MESSAGE',status:422});
+  const systemInstruction={parts:[{text:`أنت مدرس مساعد لمنصة مُذاكرة الثانوية العامة في مصر. اشرح بالعربية المصرية ببساطة، ولا تعطِ إجابات غش لاختبارات جارية. سياق الطالب: ${String(context||'').slice(0,2000)}`}]};
+  const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent`,{
+    method:'POST', headers:{'x-goog-api-key':GEMINI_API_KEY,'Content-Type':'application/json'},
+    body:JSON.stringify({system_instruction:systemInstruction,contents:safeMessages,generationConfig:{temperature:0.6,maxOutputTokens:900}})
+  });
+  const raw=await r.text(); let data=null; try{data=raw?JSON.parse(raw):null}catch(_){data=null}
+  if(!r.ok){ const e=new Error('AI_REQUEST_FAILED'); e.code='AI_REQUEST_FAILED'; e.status=r.status; throw e; }
+  const text=(data?.candidates?.[0]?.content?.parts||[]).map(x=>x?.text||'').join('\n').trim();
+  if(!text) throw Object.assign(new Error('AI_EMPTY_RESPONSE'),{code:'AI_EMPTY_RESPONSE',status:502});
+  return text.slice(0,12000);
+}
 function flattenTicket(t){
   const msgs=t.messages||[];
   const first=msgs.find(m=>m.from==='student')||msgs[0];
@@ -188,6 +213,14 @@ async function handler(req,res){
   try{
     if(action==='me'){
       const u=sessionUser(req); return ok(res,{authenticated:!!u,user:u||undefined});
+    }
+    if(action==='ai' && method==='POST'){
+      requireUser(req);
+      const messages=Array.isArray(body.messages)?body.messages:[];
+      const context=String(body.context||'');
+      const text=await geminiGenerate(messages,context);
+      await audit(sessionUser(req),'ai_message',{chars:text.length});
+      return ok(res,{text});
     }
     if(action==='login' && method==='POST'){
       const identifier=String(body.identifier||body.phone||body.email||body.username||'').trim();
@@ -373,10 +406,10 @@ async function handler(req,res){
       const actor=requireUser(req);
       if(actor.role!=='owner') return fail(res,403,'OWNER_ONLY');
       // لا نعتمد على state هنا حتى لا تتعطل لوحة الحسابات إذا كانت قاعدة البيانات قديمة.
-      const rows=await sb('users?select=id,name,email,phone,username,role,created_at,updated_at&order=created_at.desc&limit=500');
+      const rows=await sb('users?select=id,name,email,phone,username,role,state,created_at,updated_at&order=created_at.desc&limit=500');
       return ok(res,{source:'supabase',total:Array.isArray(rows)?rows.length:0,users:(rows||[]).map(u=>({
         id:u.id,name:u.name,email:u.email||'',phone:u.phone||'',username:u.username||'',role:u.role||'student',
-        grade:'',branch:'',created_at:u.created_at,updated_at:u.updated_at
+        grade:u.state?.grade||'',branch:u.state?.branch||'',created_at:u.created_at,updated_at:u.updated_at
       }))});
     }
     if(action==='user_role' && method==='POST'){
@@ -427,7 +460,16 @@ async function handler(req,res){
     }
     return fail(res,404,'NOT_FOUND');
   }catch(e){
-    const status=e.status||500; return fail(res,status,e.code||'SERVER_ERROR');
+    const status=e.status||500;
+    // أخطاء التحقق/قاعدة البيانات المعروفة ترجع كودًا مفهومًا للواجهة.
+    // لا نرجع تفاصيل Supabase الخام حتى لا نكشف معلومات داخلية.
+    let code=e.code||'SERVER_ERROR';
+    if(code==='SERVER_ERROR' && e?.data?.code) code=String(e.data.code);
+    if(code==='23505'){
+      const msg=String(e?.data?.message||e?.message||'').toLowerCase();
+      code=msg.includes('username')?'USERNAME_EXISTS':msg.includes('phone')?'PHONE_EXISTS':msg.includes('email')?'EMAIL_EXISTS':'DUPLICATE_ENTRY';
+    }
+    return fail(res,status,code);
   }
 }
 

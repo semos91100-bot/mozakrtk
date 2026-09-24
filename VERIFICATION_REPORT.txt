@@ -1,0 +1,30 @@
+Vercel-style verification report
+
+This package was tested locally using the same serverless handler shape used by Vercel (/api/backend.js), with an in-memory Supabase REST emulator.
+
+PASS
+- JavaScript syntax checks: api/backend.js + all assets + tests
+- Browser/client action coverage: every apiJSON action has a matching backend action
+- HTML asset references: all local assets exist
+- HTTP smoke: index.html, assets/app.js, and /api/backend?action=me return successfully
+- Student signup with username + phone + grade + branch
+- Owner login
+- Owner account list
+- Owner sees grade/branch from saved state
+- Owner adds student email
+- Student login by email
+- Owner changes student role
+- Student receives role notification
+- Staff cannot open a student ticket
+- Student creates ticket
+- Owner sees the ticket
+- Owner replies to ticket
+- Admin chat send/read
+- Owner audit log read
+- Owner account protection
+- Owner deletes a non-owner account
+- AI action no longer returns 404; without GEMINI_API_KEY it returns AI_NOT_CONFIGURED
+
+IMPORTANT
+- I could not perform an actual deployment into your Vercel account because no Vercel login/project token is available in this environment.
+- Before production deployment, set the required Vercel environment variables and run SUPABASE.sql in the same Supabase project.

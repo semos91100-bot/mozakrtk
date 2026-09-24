@@ -8,6 +8,8 @@ Vercel deployment checklist
    SESSION_SECRET
    OWNER_EMAIL
    OWNER_PASSWORD
+   GEMINI_API_KEY (optional)
+   GEMINI_MODEL (optional)
 
 4) Run SUPABASE.sql once in Supabase SQL Editor.
 5) Redeploy after saving the environment variables.

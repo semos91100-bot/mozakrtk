@@ -37,3 +37,5 @@ OWNER ACCOUNTS
 ADMIN CHAT
 - Run the updated SUPABASE.sql to create admin_chat_messages.
 - The chat is available only to staff roles and is accessible from "شات الإدارة".
+
+إصلاح مهم: النسخة الحالية تحتوي على تعريف مراحل/شعب الثانوية داخل API نفسه، لذلك تسجيل الحساب لا يعتمد على متغير واجهة غير موجود.
