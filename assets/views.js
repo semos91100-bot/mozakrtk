@@ -315,21 +315,22 @@ function vAch(){
 function vSupport(){
   const u=AUTH.user;
   if(!u) return `<h1>الدعم الفني</h1><div class="empty"><b>سجّل دخولك الأول</b>لازم يكون عندك حساب عشان تستخدم نظام التذاكر.</div>`;
-  const isAdmin=u.role==="admin";
+  const isAdmin=isManagerRole(u.role);
+  const isStaff=isStaffRole(u.role);
   const list=MozakraTicketing.forCurrentUser();
   if(!window.__activeTicket && list.length) window.__activeTicket=list[0].id;
   return `<div class="ticket-section-title">
     <div><h1>${isAdmin?"لوحة الدعم الفني — كل التذاكر":"الدعم الفني"}</h1>
       <p class="muted sm">${isAdmin?"تابع وردّ على تذاكر الطلاب بحسب الأولوية والحالة":"افتح تذكرة جديدة وتابع الردود من فريق الدعم"}</p></div>
-    ${!isAdmin?`<button class="btn primary" data-ticket-action="new">+ تذكرة جديدة</button>`:""}
+    ${!isStaff?`<button class="btn primary" data-ticket-action="new">+ تذكرة جديدة</button>`:""}
   </div>
   ${isAdmin?renderTicketStatsOld():""}
   <div class="support-wrap-old">
     <div>
-      ${renderTicketFiltersOld(isAdmin)}
-      <div class="ticket-list-old" id="ticketListOld">${renderTicketRowsOld(list,isAdmin)}</div>
+      ${renderTicketFiltersOld(isStaff)}
+      <div class="ticket-list-old" id="ticketListOld">${renderTicketRowsOld(list,isStaff)}</div>
     </div>
-    <div id="ticketDetailWrapOld">${window.__creatingTicket?renderNewTicketFormOld():renderTicketDetailOld(window.__activeTicket,isAdmin)}</div>
+    <div id="ticketDetailWrapOld">${window.__creatingTicket?renderNewTicketFormOld():renderTicketDetailOld(window.__activeTicket,isStaff)}</div>
   </div>`;
 }
 function ticketBadgeOld(text,cls){ return `<span class="ticket-badge ${cls||""}">${esc(text)}</span>`; }
@@ -340,17 +341,17 @@ function renderTicketStatsOld(){
   const st=MozakraTicketing.stats();
   return `<div class="grid g4 ticket-stats"><div class="card stat"><b>${st.open}</b><span>مفتوحة</span></div><div class="card stat"><b>${st.progress}</b><span>قيد المعالجة</span></div><div class="card stat"><b>${st.resolved}</b><span>تم حلها</span></div><div class="card stat"><b style="color:var(--bad)">${st.urgent}</b><span>عاجلة وغير محلولة</span></div></div>`;
 }
-function renderTicketFiltersOld(isAdmin){
-  return `<div class="ticket-filters-old"><select id="ticketStatusFilter"><option value="">كل الحالات</option>${TICKET_STATUSES.map(s=>`<option value="${s.id}">${s.name}</option>`).join("")}</select><select id="ticketPriorityFilter"><option value="">كل الأولويات</option>${TICKET_PRIORITIES.map(p=>`<option value="${p.id}">${p.name}</option>`).join("")}</select>${isAdmin?`<input id="ticketSearchFilter" placeholder="بحث بالاسم أو الموضوع…">`:""}</div>`;
+function renderTicketFiltersOld(isStaff){
+  return `<div class="ticket-filters-old"><select id="ticketStatusFilter"><option value="">كل الحالات</option>${TICKET_STATUSES.map(s=>`<option value="${s.id}">${s.name}</option>`).join("")}</select><select id="ticketPriorityFilter"><option value="">كل الأولويات</option>${TICKET_PRIORITIES.map(p=>`<option value="${p.id}">${p.name}</option>`).join("")}</select>${isStaff?`<input id="ticketSearchFilter" placeholder="بحث بالاسم أو الموضوع…">`:""}</div>`;
 }
-function renderTicketRowsOld(list,isAdmin){
-  if(!list.length) return `<div class="empty ticket-empty"><b>مفيش تذاكر لسه</b>${isAdmin?"لما الطلاب يبعثوا هتظهر التذاكر هنا.":"افتح تذكرة جديدة من زر «تذكرة جديدة»."}</div>`;
-  return list.map(t=>{const last=t.messages[t.messages.length-1];return `<div class="ticket-row-old ${t.id===window.__activeTicket?"active":""}" data-ticket-id="${esc(t.id)}"><div class="between"><span class="xs muted">#${esc(t.id)}</span>${statusBadgeOld(t.status)}</div><b class="ticket-subject-old">${esc(t.subject)}</b>${isAdmin?`<div class="xs muted">👤 ${esc(t.userName)} — ${esc(t.userEmail)}</div>`:""}<div class="ticket-meta-old">${priorityBadgeOld(t.priority)} ${ticketBadgeOld(categoryNameOld(t.category),"cat")}</div><div class="xs muted ticket-last-old">${last?esc(last.text):""}</div></div>`;}).join("");
+function renderTicketRowsOld(list,isStaff){
+  if(!list.length) return `<div class="empty ticket-empty"><b>مفيش تذاكر لسه</b>${isStaff?"لما الطلاب يبعثوا هتظهر التذاكر هنا.":"افتح تذكرة جديدة من زر «تذكرة جديدة»."}</div>`;
+  return list.map(t=>{const last=t.messages[t.messages.length-1];return `<div class="ticket-row-old ${t.id===window.__activeTicket?"active":""}" data-ticket-id="${esc(t.id)}"><div class="between"><span class="xs muted">#${esc(t.id)}</span>${statusBadgeOld(t.status)}</div><b class="ticket-subject-old">${esc(t.subject)}</b>${isStaff?`<div class="xs muted">👤 ${esc(t.userName)} — ${esc(t.userEmail)}</div>`:""}<div class="ticket-meta-old">${priorityBadgeOld(t.priority)} ${ticketBadgeOld(categoryNameOld(t.category),"cat")}</div><div class="xs muted ticket-last-old">${last?esc(last.text):""}</div></div>`;}).join("");
 }
-function renderTicketDetailOld(id,isAdmin){
+function renderTicketDetailOld(id,isStaff){
   const t=MozakraTicketing.get(id);
   if(!t) return `<div class="ticket-detail-old"><div class="empty ticket-empty"><b>اختار تذكرة</b>هتشوف التفاصيل والردود هنا.</div></div>`;
-  return `<div class="ticket-detail-old"><div class="ticket-head-old"><div><div class="xs muted">#${esc(t.id)}</div><h2>${esc(t.subject)}</h2><div class="xs muted">${isAdmin?`${esc(t.userName)} — ${esc(t.userEmail)}`:`فتحت في ${fmtTicketTimeOld(t.createdAt)}`}</div></div><div class="ticket-controls-old">${statusBadgeOld(t.status)} ${priorityBadgeOld(t.priority)}${isAdmin?`<select data-ticket-status="${esc(t.id)}">${TICKET_STATUSES.map(s=>`<option value="${s.id}" ${s.id===t.status?"selected":""}>${s.name}</option>`).join("")}</select><select data-ticket-priority="${esc(t.id)}">${TICKET_PRIORITIES.map(p=>`<option value="${p.id}" ${p.id===t.priority?"selected":""}>${p.name}</option>`).join("")}</select>`:""}</div></div><div class="ticket-thread-old">${t.messages.map(m=>`<div class="ticket-msg-old ${m.from==="admin"?"admin":"student"}"><b>${m.from==="admin"?"فريق الدعم":esc(m.authorName)}</b><div>${esc(m.text)}</div><small>${fmtTicketTimeOld(m.at)}</small></div>`).join("")}</div><form class="ticket-composer-old" data-ticket-reply="${esc(t.id)}"><textarea placeholder="اكتب ردك هنا…" required></textarea><button class="btn primary" type="submit">إرسال</button></form></div>`;
+  return `<div class="ticket-detail-old"><div class="ticket-head-old"><div><div class="xs muted">#${esc(t.id)}</div><h2>${esc(t.subject)}</h2><div class="xs muted">${isStaff?`${esc(t.userName)} — ${esc(t.userEmail)}`:`فتحت في ${fmtTicketTimeOld(t.createdAt)}`}</div></div><div class="ticket-controls-old">${statusBadgeOld(t.status)} ${priorityBadgeOld(t.priority)}${isStaff?`<select data-ticket-status="${esc(t.id)}">${TICKET_STATUSES.map(s=>`<option value="${s.id}" ${s.id===t.status?"selected":""}>${s.name}</option>`).join("")}</select><select data-ticket-priority="${esc(t.id)}">${TICKET_PRIORITIES.map(p=>`<option value="${p.id}" ${p.id===t.priority?"selected":""}>${p.name}</option>`).join("")}</select>`:""}</div></div><div class="ticket-thread-old">${t.messages.map(m=>`<div class="ticket-msg-old ${m.from==="admin"?"admin":"student"}"><b>${m.from!=="student"?"فريق الدعم":esc(m.authorName)}</b><div>${esc(m.text)}</div><small>${fmtTicketTimeOld(m.at)}</small></div>`).join("")}</div><form class="ticket-composer-old" data-ticket-reply="${esc(t.id)}"><textarea placeholder="اكتب ردك هنا…" required></textarea><button class="btn primary" type="submit">إرسال</button></form></div>`;
 }
 function fmtTicketTimeOld(iso){ const d=new Date(iso); return isNaN(d)?"":d.toLocaleString("ar-EG",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}); }
 function renderNewTicketFormOld(){
@@ -366,7 +367,7 @@ function wireTicketPageOld(){
   document.querySelectorAll("[data-ticket-reply]").forEach(form=>{if(form.dataset.wired)return;form.dataset.wired="1";form.addEventListener("submit",e=>{e.preventDefault();const ta=form.querySelector("textarea");const r=MozakraTicketing.reply(form.dataset.ticketReply,ta.value);if(r.ok){toast("تم إرسال الرد");render();}else toast(r.msg);});});
   document.querySelectorAll("[data-ticket-action]").forEach(el=>{if(el.dataset.wired)return;el.dataset.wired="1";el.addEventListener("click",()=>{if(el.dataset.ticketAction==="new")window.__creatingTicket=true;else window.__creatingTicket=false;render();});});
   const sf=document.querySelector("#ticketStatusFilter"),pf=document.querySelector("#ticketPriorityFilter"),qf=document.querySelector("#ticketSearchFilter");
-  const filter=()=>{let list=MozakraTicketing.forCurrentUser();if(sf?.value)list=list.filter(t=>t.status===sf.value);if(pf?.value)list=list.filter(t=>t.priority===pf.value);if(qf?.value){const q=qf.value.trim().toLowerCase();list=list.filter(t=>(t.subject||"").toLowerCase().includes(q)||(t.userName||"").toLowerCase().includes(q)||(t.userEmail||"").toLowerCase().includes(q));}const box=document.querySelector("#ticketListOld");if(box)box.innerHTML=renderTicketRowsOld(list,AUTH.user?.role==="admin");wireTicketPageOld();};
+  const filter=()=>{let list=MozakraTicketing.forCurrentUser();if(sf?.value)list=list.filter(t=>t.status===sf.value);if(pf?.value)list=list.filter(t=>t.priority===pf.value);if(qf?.value){const q=qf.value.trim().toLowerCase();list=list.filter(t=>(t.subject||"").toLowerCase().includes(q)||(t.userName||"").toLowerCase().includes(q)||(t.userEmail||"").toLowerCase().includes(q));}const box=document.querySelector("#ticketListOld");if(box)box.innerHTML=renderTicketRowsOld(list,isStaffRole(AUTH.user?.role));wireTicketPageOld();};
   sf?.addEventListener("change",filter);pf?.addEventListener("change",filter);qf?.addEventListener("input",filter);
 }
 
@@ -390,36 +391,34 @@ function openTeacherEditor(id){
   </div></div>`;
 }
 function vAdmin(){
-  if(!(AUTH.user&&AUTH.user.role==="admin")) return vNotFound();
+  if(!(AUTH.user&&isManagerRole(AUTH.user.role))) return vNotFound();
   const tk=SUPPORT.tickets||[];
-  const open=tk.filter(t=>t.status!=="answered").length;
-  return `<h1>🛠️ لوحة التحكم</h1><p class="muted sm" style="margin-bottom:18px">أي تعديل هنا بيظهر لكل الطلاب فورًا — مفيش سحابة، كله متخزّن على استضافتك.</p>
+  const open=tk.filter(t=>!['resolved','closed'].includes(t.status)).length;
+  const roleOptions=(targetRole,currentRole)=>{
+    const actor=AUTH.user?.role;
+    let roles=actor==='owner'?['student','support','moderator','admin','owner']:['student','support','moderator'];
+    if(currentRole && !roles.includes(currentRole)) roles=[currentRole,...roles];
+    return roles.map(r=>`<option value="${r}" ${r===currentRole?'selected':''}>${roleLabel(r)}</option>`).join('');
+  };
+  return `<h1>🛠️ لوحة التحكم</h1><p class="muted sm" style="margin-bottom:18px">رتبتك الحالية: <b>${roleLabel(AUTH.user.role)}</b> — إدارة المحتوى والتذاكر والرتب حسب الصلاحيات.</p>
 
-  <div class="between" style="margin-bottom:10px"><h2>👨‍🏫 المدرسين (${teachers().length})</h2><button class="btn sm primary" data-act="newteacher">➕ مدرّس جديد</button></div>
-  <div class="grid g3" style="margin-bottom:24px">${teachers().map(t=>`
-    <div class="card">
-      <b>${t.ti?esc(t.ti)+" ":""}${esc(t.n)}</b><div class="sm muted">${SUB(t.s).name} · ${linksLabel((t.links||[]).length)}</div>
-      <button class="btn sm" style="margin-top:8px" data-act="editteacher" data-id="${t.id}">✏️ تعديل</button>
-    </div>`).join("")}</div>
+  ${AUTH.user.role==='owner'||AUTH.user.role==='admin'?`<div class="between" style="margin-bottom:10px"><h2>👨‍🏫 المدرسين (${teachers().length})</h2><button class="btn sm primary" data-act="newteacher">➕ مدرّس جديد</button></div>
+  <div class="grid g3" style="margin-bottom:24px">${teachers().map(t=>`<div class="card"><b>${t.ti?esc(t.ti)+" ":""}${esc(t.n)}</b><div class="sm muted">${SUB(t.s).name} · ${linksLabel((t.links||[]).length)}</div><button class="btn sm" style="margin-top:8px" data-act="editteacher" data-id="${t.id}">✏️ تعديل</button></div>`).join('')}</div>`:''}
 
-  <h2 style="margin-bottom:10px">📣 إشعار جديد</h2>
+  ${AUTH.user.role==='owner'||AUTH.user.role==='admin'?`<h2 style="margin-bottom:10px">📣 إشعار جديد</h2>
   <div class="card" style="margin-bottom:24px">
     <label class="field"><span>العنوان</span><input id="n_title" placeholder="مثلاً: امتحان تجريبي الأسبوع الجاي"></label>
     <label class="field"><span>النص (اختياري)</span><textarea id="n_body" rows="2"></textarea></label>
-    <label class="field"><span>لمين؟</span><input id="n_to" value="all" placeholder="all لكل الطلاب، أو إيميل طالب معيّن"></label>
+    <label class="field"><span>لمين؟</span><input id="n_to" value="all" placeholder="all / staff / رقم موبايل / إيميل طالب"></label>
     <button class="btn primary" data-act="sendnotif">إرسال الإشعار</button>
   </div>
+  <h2 style="margin-bottom:10px">👥 إدارة الرتب</h2>
+  <div class="card" style="margin-bottom:24px">
+    ${USERS.length?`<div class="ticket-user-table">${USERS.map(u=>`<div class="item"><div class="ico">${u.role==='owner'?'👑':u.role==='admin'?'🔴':u.role==='moderator'?'🟠':u.role==='support'?'🔵':'👤'}</div><div class="gr"><b>${esc(u.name||'طالب')}</b><span>${esc(u.phone||'بدون رقم')} ${u.email?` · ${esc(u.email)}`:''}</span></div><select data-act="setrole" data-id="${u.id}" ${u.role==='owner'||String(u.id)===String(AUTH.user.id)?'disabled':''}>${roleOptions(u,u.role)}</select></div>`).join('')}</div>`:`<div class="empty"><b>مفيش طلاب مسجلين لسه</b></div>`}
+  </div>`:''}
 
-  <div class="between" style="margin-bottom:10px"><h2>🆘 الدعم الفني</h2>${open?`<span class="chip on">${open} في الانتظار</span>`:""}</div>
-  ${tk.length? tk.map(t=>`<div class="card" style="margin-bottom:10px">
-      <div class="between"><b>${esc(t.name||"طالب")}</b><span class="xs muted">${esc(t.email)}</span></div>
-      <p style="margin-top:6px">${esc(t.message)}</p>
-      ${t.reply?`<div class="card" style="margin-top:8px;background:var(--card2)"><b>ردّك</b><p style="margin-top:4px">${esc(t.reply)}</p></div>`
-        :`<div style="margin-top:8px">
-            <textarea data-reply-for="${t.id}" rows="2" placeholder="اكتب ردّك..." style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--card2)"></textarea>
-            <button class="btn sm primary" style="margin-top:6px" data-act="replysupport" data-id="${t.id}">رد</button>
-          </div>`}
-    </div>`).join("") : `<div class="empty"><b>لسه مفيش رسائل دعم فني</b></div>`}`;
+  <div class="between" style="margin-bottom:10px"><h2>🆘 الدعم الفني</h2>${open?`<span class="chip on">${open} مفتوحة</span>`:""}</div>
+  ${tk.length? tk.map(t=>`<div class="card" style="margin-bottom:10px"><div class="between"><b>${esc(t.name||"طالب")}</b><span class="xs muted">${esc(t.email||'بدون إيميل')} · ${esc(t.uid||'')}</span></div><p style="margin-top:6px">${esc(t.message||'')}</p>${t.reply?`<div class="card" style="margin-top:8px;background:var(--card2)"><b>ردّ الفريق</b><p style="margin-top:4px">${esc(t.reply)}</p></div>`:`<div style="margin-top:8px"><textarea data-reply-for="${t.id}" rows="2" placeholder="اكتب ردّك..." style="width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--card2)"></textarea><button class="btn sm primary" style="margin-top:6px" data-act="replysupport" data-id="${t.id}">رد</button></div>`}</div>`).join(''):`<div class="empty"><b>لسه مفيش رسائل دعم فني</b></div>`}`;
 }
 
 function vNotFound(){ return `<div class="empty"><b>الصفحة مش موجودة</b><a class="btn" href="#/dash">رجوع للرئيسية</a></div>`; }

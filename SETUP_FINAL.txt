@@ -1,0 +1,29 @@
+تشغيل النسخة النهائية على Vercel
+================================
+
+1) أنشئ مشروع Supabase.
+2) افتح SQL Editor وشغّل الملف SUPABASE.sql كاملًا. الملف يحتوي جداول الحسابات والتذاكر والإشعارات والرتب مع تحديث للجداول القديمة.
+3) في Vercel > Settings > Environment Variables أضف:
+   SUPABASE_URL = Project URL
+   SUPABASE_SERVICE_ROLE_KEY = service_role key
+   SESSION_SECRET = أي نص عشوائي طويل 32 حرفًا أو أكثر
+   OWNER_EMAIL = semos91100@gmail.com
+   OWNER_PASSWORD = alton112233
+4) اعمل Redeploy.
+
+تسجيل الدخول:
+- الطالب: رقم الموبايل + كلمة المرور.
+- الإدارة: البريد الإلكتروني + كلمة المرور.
+- حساب OWNER الافتراضي: semos91100@gmail.com / alton112233
+
+الرتب:
+OWNER > ADMIN > MODERATOR > SUPPORT > STUDENT
+- OWNER يدير كل شيء ولا يمكن لأي رتبة تغييره.
+- ADMIN يدير الموقع والتذاكر ويعطي STUDENT/SUPPORT/MODERATOR.
+- MODERATOR وSUPPORT يردان على التذاكر ويغيران الحالة والأولوية.
+- STUDENT يرى تذاكره ويفتح تذاكر جديدة.
+
+الإشعارات:
+يمكن إرسالها للجميع (all)، فريق الدعم (staff)، أو لطالب برقم الموبايل/الإيميل.
+
+مهم: لا تضع SUPABASE_SERVICE_ROLE_KEY داخل ملفات frontend أو GitHub.

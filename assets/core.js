@@ -27,9 +27,22 @@ async function fetchNotifications(){
 }
 /* تذاكر الدعم الفني */
 let SUPPORT={tickets:[],isAdmin:false};
+let USERS=[];
+const ROLE_META={owner:{name:"OWNER 👑",color:"var(--bad)"},admin:{name:"ADMIN 🔴",color:"var(--warn)"},moderator:{name:"MODERATOR 🟠",color:"var(--accent)"},support:{name:"SUPPORT 🔵",color:"var(--ok)"},student:{name:"STUDENT 👤",color:"var(--muted)"}};
+const ROLE_LEVEL={student:0,support:1,moderator:2,admin:3,owner:4};
+function roleLabel(role){ return ROLE_META[role]?.name||"STUDENT 👤"; }
+function roleLevel(role){ return ROLE_LEVEL[role]??0; }
+function isStaffRole(role){ return roleLevel(role)>=1; }
+function isManagerRole(role){ return roleLevel(role)>=3; }
+function canManageRolesRole(role){ return roleLevel(role)>=3; }
+function isOwnerRole(role){ return role==="owner"; }
 async function fetchSupport(){
   if(!AUTH.user) return;
   try{ const d=await apiJSON("support"); if(d.ok){ SUPPORT={tickets:d.tickets||[],isAdmin:!!d.isAdmin}; render(); } }catch(e){}
+}
+async function fetchUsers(){
+  if(!AUTH.user || !isManagerRole(AUTH.user.role)) return;
+  try{ const d=await apiJSON("users"); if(d.ok) USERS=d.users||[]; if((location.hash||"").startsWith("#/admin")) render(); }catch(e){}
 }
 function loadLocal(){
   try{ const r=localStorage.getItem(LS); if(r) return Object.assign(structuredClone(DEF),JSON.parse(r)); }catch(e){}
@@ -70,6 +83,7 @@ async function refreshSharedData(){
   try{ await fetchNotifications(); }catch(e){}
   const route=(location.hash||"#/dash").slice(2).split("?")[0].split("/")[0];
   if(route==="support" || route==="admin") try{ await fetchSupport(); }catch(e){}
+  if(route==="admin" && isManagerRole(AUTH.user.role)) try{ await fetchUsers(); }catch(e){}
 }
 async function initAuth(){
   try{
@@ -83,28 +97,42 @@ async function initAuth(){
     setTimeout(()=>refreshSharedData(),300);
     const route=(location.hash||"#/dash").slice(2).split("?")[0].split("/")[0];
     if(route==="support" || route==="admin") fetchSupport();
+    if(route==="admin" && isManagerRole(AUTH.user.role)) fetchUsers();
   }
 }
-async function loginAccount(email,password){
-  email=(email||"").trim().toLowerCase(); password=password||"";
-  if(!email) { renderAuth("اكتب البريد الإلكتروني."); return; }
-  if(!password) { renderAuth("اكتب كلمة المرور."); return; }
+async function loginAccount(identifier,password,kind="student"){
+  identifier=(identifier||"").trim(); password=password||"";
+  if(!identifier){ renderAuth(kind==="staff"?"اكتب البريد الإلكتروني.":"اكتب رقم الموبايل."); return; }
+  if(!password){ renderAuth("اكتب كلمة المرور."); return; }
   AUTH.busy=true; renderAuth();
-  const d=await apiJSON("login",{method:"POST",body:JSON.stringify({email,password})});
+  const d=await apiJSON("login",{method:"POST",body:JSON.stringify({identifier,phone:kind==="student"?identifier:"",email:kind==="staff"?identifier:"",password})});
   if(!d.ok){ AUTH.busy=false; renderAuth(authMessage(d.error)); return; }
   AUTH.user=d.user;
   const st=await apiJSON("state");
   if(st.ok&&st.state&&Object.keys(st.state).length) S=Object.assign(structuredClone(DEF),st.state);
-  else await apiJSON("state",{method:"POST",body:JSON.stringify({state:S})});
-  AUTH.busy=false; render(); if(!S.onboarded) onboarding(); fetchNotifications(); refreshSharedData();
+  else if(!isStaffRole(AUTH.user.role)) await apiJSON("state",{method:"POST",body:JSON.stringify({state:S})});
+  AUTH.busy=false;
+  window.__authMode="login"; window.__authKind=isStaffRole(AUTH.user.role)?"staff":"student";
+  $("#authLayer").innerHTML="";
+  syncAuthButton();
+  location.hash="#/dash";
+  render();
+  if(!S.onboarded && !isStaffRole(AUTH.user.role)) onboarding();
+  await fetchNotifications(); await refreshSharedData();
 }
-async function signupAccount(name,email,password){
+async function signupAccount(name,phone,password,emailValue=""){
+  phone=(phone||"").trim(); password=password||""; emailValue=(emailValue||"").trim().toLowerCase();
+  if(!name) { renderAuth("اكتب اسمك."); return; }
+  if(!phone) { renderAuth("اكتب رقم الموبايل."); return; }
+  if(!password) { renderAuth("اكتب كلمة المرور."); return; }
   AUTH.busy=true; renderAuth();
-  const d=await apiJSON("signup",{method:"POST",body:JSON.stringify({name,email,password})});
+  const d=await apiJSON("signup",{method:"POST",body:JSON.stringify({name,phone,password,email:emailValue})});
   if(!d.ok){ AUTH.busy=false; renderAuth(authMessage(d.error)); return; }
   AUTH.user=d.user; S.name=name.trim()||S.name; S.updated=Date.now();
   await apiJSON("state",{method:"POST",body:JSON.stringify({state:S})});
-  AUTH.busy=false; render(); if(!S.onboarded) onboarding(); fetchNotifications(); refreshSharedData();
+  AUTH.busy=false; window.__authMode="login"; window.__authKind="student";
+  $("#authLayer").innerHTML=""; syncAuthButton(); location.hash="#/dash"; render();
+  if(!S.onboarded) onboarding(); await fetchNotifications(); await refreshSharedData();
 }
 async function logoutAccount(){
   AUTH.busy=true;
@@ -121,7 +149,7 @@ async function logoutAccount(){
   }
 }
 function authMessage(code){
-  return ({NETWORK_ERROR:"مش قادر أوصل بخدمة الموقع. اتأكد إن الموقع مرفوع على Vercel بشكل صحيح.",BAD_RESPONSE:"حصلت مشكلة في تشغيل خدمة الموقع. أعد تحميل الصفحة وجرب تاني.",TOO_MANY_ATTEMPTS:"محاولات دخول كتير. استنى شوية وجرب تاني.",STORAGE_ERROR:"الموقع مش قادر يحفظ بيانات الحسابات في المتصفح.",EMAIL_EXISTS:"الإيميل ده مسجل بالفعل.",LOGIN_FAILED:"الإيميل أو كلمة المرور غير صحيحة.",INVALID_EMAIL:"اكتب بريد إلكتروني صحيح.",PASSWORD_SHORT:"كلمة المرور لازم تكون 8 أحرف على الأقل.",PASSWORD_LONG:"كلمة المرور طويلة جدًا.",REQUEST_FAILED:"حصلت مشكلة في الاتصال بالسيرفر.",SERVER_ERROR:"حصل خطأ في السيرفر.",AI_NOT_CONFIGURED:"مدرس AI محتاج تفعيل مفتاح Gemini على السيرفر."}[code]||"حصل خطأ. جرّب تاني.");
+  return ({NETWORK_ERROR:"مش قادر أوصل بخدمة الموقع. اتأكد إن الموقع مرفوع على Vercel بشكل صحيح.",BAD_RESPONSE:"حصلت مشكلة في تشغيل خدمة الموقع. أعد تحميل الصفحة وجرب تاني.",TOO_MANY_ATTEMPTS:"محاولات دخول كتير. استنى شوية وجرب تاني.",STORAGE_ERROR:"الموقع مش قادر يحفظ بيانات الحسابات في المتصفح.",EMAIL_EXISTS:"الإيميل ده مسجل بالفعل." ,PHONE_EXISTS:"رقم الموبايل ده مسجل بالفعل.",INVALID_PHONE:"اكتب رقم موبايل مصري صحيح.",USER_NOT_FOUND:"المستخدم مش موجود.",CANNOT_CHANGE_SELF_ROLE:"مش مسموح تغيّر رتبتك بنفسك.",OWNER_PROTECTED:"رتبة OWNER محمية ومحدش يقدر يغيرها.",ROLE_NOT_ALLOWED:"الرتبة دي مش مسموح لك تعيينها.",LOGIN_FAILED:"الإيميل أو كلمة المرور غير صحيحة.",INVALID_EMAIL:"اكتب بريد إلكتروني صحيح.",PASSWORD_SHORT:"كلمة المرور لازم تكون 8 أحرف على الأقل.",PASSWORD_LONG:"كلمة المرور طويلة جدًا.",REQUEST_FAILED:"حصلت مشكلة في الاتصال بالسيرفر.",SERVER_ERROR:"حصل خطأ في السيرفر.",AI_NOT_CONFIGURED:"مدرس AI محتاج تفعيل مفتاح Gemini على السيرفر."}[code]||"حصل خطأ. جرّب تاني.");
 }
 let cloudTimer=null;
 function cloudPush(){
@@ -289,7 +317,7 @@ const NAV=[
 const TABS=[{h:"#/dash",i:"🏠",t:"الرئيسية"},{h:"#/schedule",i:"📅",t:"جدولي"},{h:"#/subjects",i:"📚",t:"المواد"},{h:"#/ai",i:"🤖",t:"مدرس AI"},{h:"#/stats",i:"📊",t:"مستواي"}];
 function navItems(){
   const items=[...NAV,{sep:1},{h:"#/support",i:"🆘",t:"الدعم الفني"}];
-  if(AUTH.user&&AUTH.user.role==="admin") items.push({h:"#/admin",i:"🛠️",t:"لوحة التحكم"});
+  if(AUTH.user&&isManagerRole(AUTH.user.role)) items.push({h:"#/admin",i:"🛠️",t:"لوحة التحكم"});
   return items;
 }
 function paintNav(){

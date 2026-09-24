@@ -1,29 +1,37 @@
-طريقة تشغيل النسخة المشتركة على Vercel
-========================================
-
-النسخة دي تحل مشكلة إن كل جهاز كان بيخزن التذاكر والإشعارات لوحده.
-لازم تربطها بقاعدة Supabase مرة واحدة، وبعدها البيانات تصبح مشتركة بين كل الأجهزة.
+طريقة تشغيل النسخة النهائية على Vercel
+====================================
 
 1) أنشئ مشروع Supabase.
-2) افتح SQL Editor وشغّل الملف SUPABASE.sql الموجود في نفس المشروع.
-3) من Settings > API انسخ:
-   - Project URL
-   - service_role key
+2) افتح Supabase > SQL Editor.
+3) شغّل محتوى `SUPABASE.sql` كاملًا.
 4) في Vercel > Settings > Environment Variables أضف:
    SUPABASE_URL
    SUPABASE_SERVICE_ROLE_KEY
    SESSION_SECRET
-
-اختياري:
-   ADMIN_EMAIL = semos91100@gmail.com
-   ADMIN_PASSWORD = alton112233
-
+   OWNER_EMAIL=semos91100@gmail.com
+   OWNER_PASSWORD=alton112233
 5) اعمل Redeploy.
 
-بعد الربط:
-- الطالب يقدر يفتح تذكرة من الدعم الفني.
-- التذكرة تظهر عند الأدمن من جهاز مختلف.
-- الطالب والأدمن يقدروا يردوا داخل نفس التذكرة.
-- إشعارات المشرف تصل للحسابات على الأجهزة المختلفة عند فتح الموقع.
+تسجيل الطالب:
+- رقم الموبايل + كلمة المرور.
 
-ملاحظة: الإشعارات هنا إشعارات داخل الموقع، وليست Push Notifications للنظام عندما يكون الموقع مغلقًا.
+تسجيل الإدارة:
+- الإيميل + كلمة المرور.
+
+الرتب:
+OWNER > ADMIN > MODERATOR > SUPPORT > STUDENT
+
+- OWNER: كل الصلاحيات.
+- ADMIN: إدارة الموقع والتذاكر وإعطاء STUDENT/SUPPORT/MODERATOR.
+- MODERATOR: إدارة التذاكر والرد عليها.
+- SUPPORT: الرد على التذاكر.
+- STUDENT: فتح ومتابعة تذاكره فقط.
+
+الإشعارات:
+- `all` = كل الطلاب.
+- `staff` = كل فريق الدعم والإدارة.
+- رقم موبايل الطالب أو إيميله = طالب محدد.
+
+مهم:
+- لا تضع مفتاح `SUPABASE_SERVICE_ROLE_KEY` داخل ملفات الواجهة.
+- بعد إضافة Environment Variables يجب عمل Redeploy.

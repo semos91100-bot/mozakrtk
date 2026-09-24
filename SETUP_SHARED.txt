@@ -1,37 +1,37 @@
-نسخة مذاكرتك — إشعارات وتذاكر مشتركة بين كل الأجهزة
-===================================================
+طريقة تشغيل النسخة النهائية على Vercel
+====================================
 
-المشكلة التي تم حلها:
-- النسخة القديمة كانت تحفظ الإشعارات والتذاكر في localStorage، لذلك كل جهاز كان يرى بياناته فقط.
-- النسخة الجديدة تستخدم API على Vercel + Supabase، لذلك التذكرة التي يفتحها الطالب تظهر للأدمن، ورد الأدمن يصل للطالب، والإشعارات مشتركة.
+1) أنشئ مشروع Supabase.
+2) افتح Supabase > SQL Editor.
+3) شغّل محتوى `SUPABASE.sql` كاملًا.
+4) في Vercel > Settings > Environment Variables أضف:
+   SUPABASE_URL
+   SUPABASE_SERVICE_ROLE_KEY
+   SESSION_SECRET
+   OWNER_EMAIL=semos91100@gmail.com
+   OWNER_PASSWORD=alton112233
+5) اعمل Redeploy.
 
-1) أنشئ مشروعًا على Supabase.
-2) افتح SQL Editor والصق كل محتوى الملف:
-   SUPABASE.sql
-   ثم اضغط Run.
-3) من Supabase > Project Settings > API خذ:
-   - Project URL
-   - service_role key
+تسجيل الطالب:
+- رقم الموبايل + كلمة المرور.
 
-4) في Vercel > مشروع الموقع > Settings > Environment Variables أضف:
-   SUPABASE_URL = رابط مشروع Supabase
-   SUPABASE_SERVICE_ROLE_KEY = service_role key
-   SESSION_SECRET = أي نص عشوائي طويل (مثلاً 32+ حرف)
+تسجيل الإدارة:
+- الإيميل + كلمة المرور.
 
-اختياري:
-   ADMIN_EMAIL = semos91100@gmail.com
-   ADMIN_PASSWORD = alton112233
-   (لو لم تضفهما، النسخة تستخدمهما تلقائيًا.)
+الرتب:
+OWNER > ADMIN > MODERATOR > SUPPORT > STUDENT
 
-5) اعمل Redeploy على Vercel.
+- OWNER: كل الصلاحيات.
+- ADMIN: إدارة الموقع والتذاكر وإعطاء STUDENT/SUPPORT/MODERATOR.
+- MODERATOR: إدارة التذاكر والرد عليها.
+- SUPPORT: الرد على التذاكر.
+- STUDENT: فتح ومتابعة تذاكره فقط.
 
-بعدها:
-- الطالب يسجل حسابه من الموقع.
-- يفتح "الدعم الفني" ثم "+ تذكرة جديدة".
-- التذكرة تظهر عند الأدمن على أي جهاز.
-- رد الأدمن يصل للطالب داخل إشعارات الموقع والتذكرة.
-- إشعار المشرف يظهر لكل الطلاب أو لطالب معين حسب البريد.
+الإشعارات:
+- `all` = كل الطلاب.
+- `staff` = كل فريق الدعم والإدارة.
+- رقم موبايل الطالب أو إيميله = طالب محدد.
 
-مهم جدًا:
-- لا تضع SUPABASE_SERVICE_ROLE_KEY داخل HTML أو JavaScript.
-- لا ترفع قيم Environment Variables إلى GitHub.
+مهم:
+- لا تضع مفتاح `SUPABASE_SERVICE_ROLE_KEY` داخل ملفات الواجهة.
+- بعد إضافة Environment Variables يجب عمل Redeploy.

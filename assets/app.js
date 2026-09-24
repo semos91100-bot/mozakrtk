@@ -162,15 +162,24 @@ function syncAuthButton(){
 function renderAuth(message=""){
   if(!AUTH.ready || AUTH.user){ $("#authLayer").innerHTML=""; syncAuthButton(); return; }
   const mode=window.__authMode||"login";
+  const kind=window.__authKind||"student";
+  const staff=kind==="staff";
   $("#authLayer").innerHTML=`<div class="modal"><div class="box" style="max-width:460px">
-    <div class="between"><div><h1>مُذاكرة</h1><p class="muted sm">سجّل دخولك عشان تقدمك يتحفظ على حسابك.</p></div><span style="font-size:42px">📚</span></div>
-    <div class="row" style="margin:14px 0"><button class="chip ${mode==="login"?"on":""}" data-auth="login">تسجيل الدخول</button><button class="chip ${mode==="signup"?"on":""}" data-auth="signup">إنشاء حساب</button></div>
+    <div class="between"><div><h1>مُذاكرة</h1><p class="muted sm">${staff?"دخول الإدارة والصلاحيات":"دخول الطالب وحفظ تقدّمك"}</p></div><span style="font-size:42px">📚</span></div>
+    <div class="row" style="margin:14px 0;flex-wrap:wrap">
+      <button class="chip ${!staff?"on":""}" data-auth-kind="student">👨‍🎓 الطالب</button>
+      <button class="chip ${staff?"on":""}" data-auth-kind="staff">🛠️ الإدارة</button>
+      ${!staff?`<button class="chip ${mode==="signup"?"on":""}" data-auth="signup">إنشاء حساب طالب</button>`:`<button class="chip ${mode==="login"?"on":""}" data-auth="login">تسجيل الدخول</button>`}
+    </div>
     ${message?`<div class="card" style="margin-bottom:10px;border-color:var(--bad);color:var(--bad)">${esc(message)}</div>`:""}
-    ${mode==="signup"?`<label class="field"><span>الاسم</span><input id="auth_name" autocomplete="name" placeholder="اسمك"></label>`:""}
-    <label class="field"><span>البريد الإلكتروني</span><input id="auth_email" type="email" autocomplete="email" placeholder="name@example.com"></label>
+    ${!staff&&mode==="signup"?`<label class="field"><span>الاسم</span><input id="auth_name" autocomplete="name" placeholder="اسمك"></label>`:""}
+    ${!staff&&mode==="signup"?`<label class="field"><span>رقم الموبايل</span><input id="auth_phone" inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx"></label>`:""}
+    ${!staff&&mode==="signup"?`<label class="field"><span>الإيميل (اختياري)</span><input id="auth_email" type="email" autocomplete="email" placeholder="للاسترجاع والإشعارات فقط"></label>`:""}
+    ${staff?`<label class="field"><span>البريد الإلكتروني</span><input id="auth_email" type="email" autocomplete="username" placeholder="admin@example.com"></label>`:""}
+    ${!staff&&mode==="login"?`<label class="field"><span>رقم الموبايل</span><input id="auth_phone" inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx"></label>`:""}
     <label class="field"><span>كلمة المرور</span><input id="auth_password" type="password" autocomplete="${mode==="login"?"current-password":"new-password"}" placeholder="8 أحرف على الأقل"></label>
-    ${mode==="signup"?`<p class="muted sm">بياناتك وتقدمك هيتحفظوا في حسابك وتقدر تدخل من أي جهاز.</p>`:""}
-    <button class="btn primary" style="width:100%;margin-top:8px" data-auth-submit="${mode}">${AUTH.busy?"جاري التنفيذ…":mode==="login"?"دخول":"إنشاء الحساب"}</button>
+    ${!staff&&mode==="signup"?`<p class="muted sm">حساب الطالب مربوط برقم الموبايل، وتقدر تدخل بيه من أي جهاز.</p>`:""}
+    <button class="btn primary" style="width:100%;margin-top:8px" data-auth-submit="${mode}">${AUTH.busy?"جاري التنفيذ…":mode==="signup"?"إنشاء الحساب":"دخول"}</button>
   </div></div>`;
   syncAuthButton();
 }
@@ -199,7 +208,7 @@ function vProfile(){
         <div class="stat"><b>${S.streak}</b><span>Streak</span></div>
         <div class="stat"><b>${S.badges.length}</b><span>إنجاز</span></div>
       </div>
-      <div class="row" style="margin-top:14px">${AUTH.user?`<span class="chip">📧 ${esc(AUTH.user.email||"")}</span><button class="btn sm" data-act="logout">تسجيل خروج</button>`:`<button class="btn primary" data-auth="login">تسجيل الدخول</button>`}</div>
+      <div class="row" style="margin-top:14px">${AUTH.user?`<span class="chip">${AUTH.user.phone?"📱 "+esc(AUTH.user.phone):"📧 "+esc(AUTH.user.email||"")}</span><span class="chip">${esc(roleLabel(AUTH.user.role))}</span><button class="btn sm" data-act="logout">تسجيل خروج</button>`:`<button class="btn primary" data-auth="login">تسجيل الدخول</button>`}</div>
       <h3 style="margin:16px 0 8px">المدرسين المختارين</h3>
       <div class="row">${(S.teachers||[]).length?(S.teachers||[]).map(id=>{const t=teachers().find(x=>x.id===id);return t?`<a class="chip" href="#/teacher/${t.id}">${esc(t.n)}</a>`:""}).join(""):`<span class="muted sm">لسه ما اخترتش مدرسين — <a href="#/teachers">اختار دلوقتي</a></span>`}</div>
     </div>
@@ -413,6 +422,17 @@ document.addEventListener("click",e=>{
   }
 });
 
+document.addEventListener("change",e=>{
+  const roleSelect=e.target.closest('select[data-act="setrole"]');
+  if(!roleSelect || !isManagerRole(AUTH.user?.role)) return;
+  const id=String(roleSelect.dataset.id||""); const role=String(roleSelect.value||"student");
+  (async()=>{
+    const d=await apiJSON("user_role",{method:"POST",body:JSON.stringify({id,role})});
+    if(d.ok){ toast("تم تحديث الرتبة"); await fetchUsers(); render(); }
+    else toast(authMessage(d.error));
+  })();
+});
+
 $("#q").addEventListener("keydown",e=>{ if(e.key==="Enter"&&e.target.value.trim()) location.hash="#/search?q="+encodeURIComponent(e.target.value.trim()); });
 $("#btnTheme").addEventListener("click",()=>{ S.theme = S.theme==="dark"?"light":"dark"; applyTheme(); saveLocal(); render(); });
 $("#btnTimer").addEventListener("click",()=>location.hash="#/timer");
@@ -437,11 +457,14 @@ fetchContent();
 if(AUTH.ready && AUTH.user && !S.onboarded) onboarding();
 
 document.addEventListener("click",e=>{
+  const kindBtn=e.target.closest("[data-auth-kind]");
+  if(kindBtn){ window.__authKind=kindBtn.dataset.authKind; window.__authMode="login"; renderAuth(); return; }
   const b=e.target.closest("[data-auth]"); if(b){ window.__authMode=b.dataset.auth; renderAuth(); return; }
   const submit=e.target.closest("[data-auth-submit]");
   if(submit){
-    const mode=submit.dataset.authSubmit, email=$("#auth_email")?.value.trim(), pass=$("#auth_password")?.value||"";
-    if(mode==="signup") signupAccount($("#auth_name")?.value.trim()||"",email,pass); else loginAccount(email,pass);
+    const mode=submit.dataset.authSubmit, kind=window.__authKind||"student", pass=$("#auth_password")?.value||"";
+    if(mode==="signup") signupAccount($("#auth_name")?.value.trim()||"",$("#auth_phone")?.value.trim()||"",pass,$("#auth_email")?.value.trim()||"");
+    else loginAccount(kind==="staff"?$("#auth_email")?.value.trim():$("#auth_phone")?.value.trim(),pass,kind);
   }
 });
 initAuth();
