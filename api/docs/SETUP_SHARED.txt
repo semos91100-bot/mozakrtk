@@ -1,0 +1,37 @@
+طريقة تشغيل النسخة النهائية على Vercel
+====================================
+
+1) أنشئ مشروع Supabase.
+2) افتح Supabase > SQL Editor.
+3) شغّل محتوى `SUPABASE.sql` كاملًا.
+4) في Vercel > Settings > Environment Variables أضف:
+   SUPABASE_URL
+   SUPABASE_SERVICE_ROLE_KEY
+   SESSION_SECRET
+   OWNER_EMAIL=semos91100@gmail.com
+   OWNER_PASSWORD=alton112233
+5) اعمل Redeploy.
+
+تسجيل الطالب:
+- رقم الموبايل + كلمة المرور.
+
+تسجيل الإدارة:
+- الإيميل + كلمة المرور.
+
+الرتب:
+OWNER > ADMIN > MODERATOR > SUPPORT > STUDENT
+
+- OWNER: كل الصلاحيات.
+- ADMIN: إدارة الموقع والتذاكر وإعطاء STUDENT/SUPPORT/MODERATOR.
+- MODERATOR: إدارة التذاكر والرد عليها.
+- SUPPORT: الرد على التذاكر.
+- STUDENT: فتح ومتابعة تذاكره فقط.
+
+الإشعارات:
+- `all` = كل الطلاب.
+- `staff` = كل فريق الدعم والإدارة.
+- رقم موبايل الطالب أو إيميله = طالب محدد.
+
+مهم:
+- لا تضع مفتاح `SUPABASE_SERVICE_ROLE_KEY` داخل ملفات الواجهة.
+- بعد إضافة Environment Variables يجب عمل Redeploy.

@@ -1,0 +1,6 @@
+مجلد assets/ (data.js, local-api.js, core.js, views.js, app.js, styles.css) غير موجود في هذه الحزمة.
+index.html بيحتاجه. حطّه جنب index.html من نسختك الأصلية (mozakra-ready-upload.zip).
+أسماء الإجراءات في api/backend.js: health, me, login, signup, logout, savestate, accounts, setrole,
+setemail, deleteaccount, notify, notifications, ticketcreate, tickets, ticketget, ticketreply, ticketupdate,
+adminchat, adminchatsend, auditlogs, sitecontent, sitecontentsave, dbhealth, ai
+(الشرطة السفلية والحروف الكبيرة مش فارقة: ticket_create = ticketCreate).

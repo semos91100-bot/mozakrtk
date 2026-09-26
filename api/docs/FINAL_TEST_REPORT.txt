@@ -1,0 +1,27 @@
+FINAL TEST REPORT — 2026-09-24
+
+PASS: Node syntax checks for api/backend.js and all frontend JS assets.
+PASS: HTML local asset reference check.
+PASS: Every apiJSON action used by the client has a matching backend action.
+PASS: Backend health endpoint.
+PASS: Student signup with username + Egyptian phone + grade + branch.
+PASS: Student login by phone.
+PASS: Student login by username.
+PASS: Student login by email after OWNER links the email.
+PASS: Case-insensitive email/username lookup.
+PASS: Owner login.
+PASS: Owner account listing.
+PASS: Owner role change and role notification.
+PASS: Non-owner staff blocked from opening student tickets.
+PASS: Student ticket creation and OWNER visibility.
+PASS: Admin chat read/write.
+PASS: OWNER audit log access.
+PASS: HTTPS session cookie Secure flag.
+PASS: Local HTTP session cookie remains usable for local testing.
+PASS: Actionable configuration/schema errors are mapped for the login UI.
+PASS: Legacy Egyptian phone formats are accepted during login lookup.
+PASS: Login/signup drafts remain visible after an error.
+PASS: OWNER-only live database health status is exposed in the OWNER panel.
+
+LIMITATION: An actual deployment into the user's Vercel account was not performed because no Vercel account/token was available in this environment.
+Production still requires the Supabase Vercel environment variables and the current SUPABASE.sql to be applied in the same Supabase project.
