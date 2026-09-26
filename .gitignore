@@ -1,7 +1,0 @@
-# Local/editor files
-.DS_Store
-.vscode/
-*.log
-.env
-.env.*
-!.env.example
