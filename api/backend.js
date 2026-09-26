@@ -431,11 +431,66 @@ A.exampublish = async (req, res, b) => {
 A.examlistadmin = async (req) => { need(await sessionUser(req), 'admin'); return { ok: true, exams: await find('exams', [], 'order=created_at.desc') }; };
 A.examattempts = async (req, res, b) => { need(await sessionUser(req), 'admin'); return { ok: true, attempts: await find('exam_attempts', b.exam_id ? [eq('exam_id', b.exam_id)] : [], 'order=submitted_at.desc') }; };
 
+
+/* ---------- question bank ---------- */
+function questionTrack(row, state) {
+  const g = state?.grade || '', br = state?.branch || '';
+  if (row.grade && row.grade !== g) return false;
+  if (row.branch && row.branch !== br) return false;
+  return true;
+}
+A.questionbank = async (req, res, b) => {
+  const u = need(await sessionUser(req));
+  const filters = [];
+  if (clean(b.subject, 100)) filters.push(eq('subject', clean(b.subject, 100)));
+  if (clean(b.difficulty, 30)) filters.push(eq('difficulty', clean(b.difficulty, 30)));
+  let rows = await find('question_bank', filters, 'order=created_at.desc&limit=80');
+  rows = rows.filter(q => questionTrack(q, u.state || {}));
+  return { ok: true, questions: rows.map(({ correct_index, explanation, ...q }) => q) };
+};
+A.questioncheck = async (req, res, b) => {
+  const u = need(await sessionUser(req));
+  const q = await one('question_bank', [eq('id', b.id)]);
+  if (!q || !questionTrack(q, u.state || {})) fail(404, 'NOT_FOUND', 'السؤال غير متاح لمسارك.');
+  const answer = Number(b.answer_index);
+  const correct = Number.isInteger(answer) && answer === Number(q.correct_index);
+  return { ok: true, correct, correct_index: Number(q.correct_index), explanation: q.explanation || '', points: Number(q.points || 1) };
+};
+A.questionbankadd = async (req, res, b) => {
+  const u = need(await sessionUser(req), 'admin');
+  const text = clean(b.text || b.question, 2000);
+  const options = Array.isArray(b.options) ? b.options.map(x => clean(x, 500)).slice(0, 8) : [];
+  const correct_index = Number(b.correct_index);
+  const subject = clean(b.subject, 100), grade = clean(b.grade, 30), branch = clean(b.branch, 40);
+  const difficulty = clean(b.difficulty, 30) || 'متوسط';
+  if (!text || !subject || options.length < 2 || !Number.isInteger(correct_index) || correct_index < 0 || correct_index >= options.length) fail(400, 'BAD_QUESTION', 'السؤال والمادة والاختيارات والإجابة الصحيحة مطلوبة.');
+  if (grade && !EDU_GRADES_SERVER[grade]) fail(400, 'BAD_TRACK', 'الصف غير صحيح.');
+  if (grade && branch && !EDU_GRADES_SERVER[grade].includes(branch)) fail(400, 'BAD_TRACK', 'الصف والشعبة غير متوافقين.');
+  const row = await insert('question_bank', { text, subject, chapter: clean(b.chapter, 120), difficulty, grade: grade || null, branch: branch || null, options, correct_index, explanation: clean(b.explanation, 1000), points: Math.max(1, Number(b.points || 1)), created_by: u.id });
+  await audit(u, 'question_bank_add', null, { question_id: row.id });
+  return { ok: true, question: row };
+};
+
+const DEFAULT_TEACHERS = [
+  { id:'t1', name:'أ/ أحمد سامح', subject:'الرياضيات', bio:'شرح مبسط وتدريب مستمر على مسائل المنهج.', grades:['first','second','third'], branches:['general','science','literary','science_biology','science_math'] },
+  { id:'t2', name:'أ/ محمد ياسر', subject:'اللغة العربية', bio:'نحو وبلاغة وقراءة مع تدريبات امتحانات.', grades:['first','second','third'], branches:['general','science','literary','science_biology','science_math'] },
+  { id:'t3', name:'أ/ عمر خالد', subject:'اللغة الإنجليزية', bio:'Grammar + Vocabulary + Practice بطريقة عملية.', grades:['first','second','third'], branches:['general','science','literary','science_biology','science_math'] },
+  { id:'t4', name:'أ/ كريم عادل', subject:'الفيزياء', bio:'حل مسائل وخطط سريعة للمراجعة النهائية.', grades:['second','third'], branches:['science','science_math','science_biology'] },
+  { id:'t5', name:'أ/ يوسف حمدي', subject:'الكيمياء', bio:'شرح المفاهيم والتدريب على أسئلة الاختيار من متعدد.', grades:['second','third'], branches:['science','science_math','science_biology'] },
+  { id:'t6', name:'أ/ مصطفى نادر', subject:'الأحياء', bio:'مراجعات مركزة ورسومات توضيحية وأسئلة بنك.', grades:['second','third'], branches:['science_biology','science'] },
+  { id:'t7', name:'أ/ شريف محمود', subject:'التاريخ', bio:'مراجعات منظمة وربط الأحداث بأسئلة الامتحانات.', grades:['second','third'], branches:['literary'] },
+  { id:'t8', name:'أ/ حسام فتحي', subject:'الجغرافيا', bio:'خرائط ومفاهيم وتدريب على أسئلة السنوات السابقة.', grades:['second','third'], branches:['literary'] },
+  { id:'t9', name:'أ/ ياسين رجب', subject:'الفلسفة والمنطق', bio:'تبسيط الأفكار وتدريب على أسئلة المقال والاختيار.', grades:['second','third'], branches:['literary'] },
+  { id:'t10', name:'أ/ محمود طارق', subject:'العلوم المتكاملة', bio:'مراجعات قصيرة وأسئلة تدريبية مناسبة للمسار.', grades:['first'], branches:['general'] }
+];
 A.sitecontent = async () => {
   const r = await one('site_content', [eq('id', 1)]);
-  return { ok: true, teachers: r?.teachers || [], removed: r?.removed || [] };
+  return { ok: true, teachers: Array.isArray(r?.teachers) && r.teachers.length ? r.teachers : DEFAULT_TEACHERS, removed: r?.removed || [] };
 };
-A.teachers = async () => { const r = await one('site_content', [eq('id', 1)]); return { ok: true, teachers: r?.teachers || [], removed: r?.removed || [] }; };
+A.teachers = async () => {
+  const r = await one('site_content', [eq('id', 1)]);
+  return { ok: true, teachers: Array.isArray(r?.teachers) && r.teachers.length ? r.teachers : DEFAULT_TEACHERS, removed: r?.removed || [] };
+};
 
 A.sitecontentsave = async (req, res, b) => {
   const u = need(await sessionUser(req), 'admin');
@@ -449,7 +504,7 @@ A.sitecontentsave = async (req, res, b) => {
 A.dbhealth = async (req) => {
   need(await sessionUser(req), 'owner');
   const out = {};
-  for (const t of ['users', 'site_content', 'notifications', 'tickets', 'ticket_messages', 'admin_chat_messages', 'audit_logs']) {
+  for (const t of ['users', 'site_content', 'notifications', 'tickets', 'ticket_messages', 'admin_chat_messages', 'audit_logs', 'exams', 'exam_questions', 'exam_attempts', 'question_bank']) {
     try { await sb(t, { query: 'select=*&limit=1' }); out[t] = 'ok'; } catch (e) { out[t] = e.code || 'error'; }
   }
   try { await sb('users', { query: 'select=username&limit=1' }); out.users_username = 'ok'; } catch (e) { out.users_username = e.code || 'error'; }

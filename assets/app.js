@@ -11,7 +11,7 @@
     C.$('#btnBell')?.addEventListener('click',()=>go('notifications'));
     C.$('#q')?.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.currentTarget.value.trim()){C.toast('جاري البحث عن: '+e.currentTarget.value.trim())}});
     window.MozakraViews.renderNav();
-    const fromHash=location.hash.match(/^#\/(home|lessons|teachers|exams|practice|notifications|tickets|profile)$/)?.[1]||'home';
+    const fromHash=location.hash.match(/^#\/(home|lessons|teachers|exams|practice|questionbank|notifications|tickets|profile)$/)?.[1]||'home';
     go(fromHash);
   }
   function go(route){window.MozakraViews.render(route)}
