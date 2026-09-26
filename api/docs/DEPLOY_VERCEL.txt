@@ -22,3 +22,7 @@ Notes:
 - OWNER can open a support ticket; the backend creates a real OWNER user row so the ticket is visible to all staff and replies/notifications can return to OWNER.
 
 6) مهم: على Vercel لا يوجد fallback مشترك بـLocalStorage؛ الحسابات والتذاكر والإشعارات ولوحة OWNER تعتمد على Supabase حتى تظهر بين الأجهزة.
+
+
+الاختبارات: بعد تشغيل SUPABASE.sql ستتوفر جداول exams و exam_questions و exam_attempts وتظهر الاختبارات المنشورة للطالب حسب مساره.
+المدرسون: بيانات المدرسين تحفظ في site_content.teachers وتظهر للطلاب عبر قسم المدرسين.

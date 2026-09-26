@@ -39,3 +39,7 @@ ADMIN CHAT
 - The chat is available only to staff roles and is accessible from "شات الإدارة".
 
 إصلاح مهم: النسخة الحالية تحتوي على تعريف مراحل/شعب الثانوية داخل API نفسه، لذلك تسجيل الحساب لا يعتمد على متغير واجهة غير موجود.
+
+
+الاختبارات: بعد تشغيل SUPABASE.sql ستتوفر جداول exams و exam_questions و exam_attempts وتظهر الاختبارات المنشورة للطالب حسب مساره.
+المدرسون: بيانات المدرسين تحفظ في site_content.teachers وتظهر للطلاب عبر قسم المدرسين.

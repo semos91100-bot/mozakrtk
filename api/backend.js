@@ -364,10 +364,79 @@ A.auditlogs = async (req) => {
   return { ok: true, logs: await find('audit_logs', [], 'order=created_at.desc&limit=300') };
 };
 
+
+/* ---------- exams ---------- */
+function trackMatch(row, state) {
+  const g = state?.grade || '', br = state?.branch || '';
+  if (row.grade && row.grade !== g) return false;
+  if (row.branch && row.branch !== br) return false;
+  return true;
+}
+A.examlist = async (req) => {
+  const u = need(await sessionUser(req));
+  const rows = await find('exams', [eq('is_published', 'true')], 'order=created_at.desc');
+  return { ok: true, exams: rows.filter(x => trackMatch(x, u.state || {})).map(({correct_index, ...rest}) => rest) };
+};
+A.examget = async (req, res, b) => {
+  const u = need(await sessionUser(req));
+  const e = await one('exams', [eq('id', b.id)]);
+  if (!e) fail(404, 'NOT_FOUND', 'الاختبار غير موجود.');
+  if (u.role === 'student' && (!e.is_published || !trackMatch(e, u.state || {}))) fail(403, 'FORBIDDEN', 'الاختبار غير متاح لمسارك.');
+  const qs = await find('exam_questions', [eq('exam_id', e.id)], 'order=id.asc');
+  return { ok: true, exam: e, questions: u.role === 'student' ? qs.map(({correct_index, ...q}) => q) : qs };
+};
+A.examsubmit = async (req, res, b) => {
+  const u = need(await sessionUser(req));
+  const e = await one('exams', [eq('id', b.id)]);
+  if (!e || !e.is_published || !trackMatch(e, u.state || {})) fail(404, 'NOT_FOUND', 'الاختبار غير متاح.');
+  const qs = await find('exam_questions', [eq('exam_id', e.id)], 'order=id.asc');
+  const answers = (b.answers && typeof b.answers === 'object') ? b.answers : {};
+  let score = 0, total_points = 0;
+  for (const q of qs) {
+    const pts = Number(q.points || 1); total_points += pts;
+    if (Number(answers[q.id]) === Number(q.correct_index)) score += pts;
+  }
+  const percent = total_points ? Math.round((score / total_points) * 100) : 0;
+  const attempt = await insert('exam_attempts', { exam_id: e.id, user_id: u.id, answers, score, total_points, percent, submitted_at: new Date().toISOString() });
+  await audit(u, 'exam_submit', null, { exam_id: e.id, score, total_points, percent });
+  return { ok: true, score, total_points, percent, attempt };
+};
+A.examcreate = async (req, res, b) => {
+  const u = need(await sessionUser(req), 'admin');
+  const title = clean(b.title, 160), subject = clean(b.subject, 100), description = clean(b.description, 1000), grade = clean(b.grade, 30), branch = clean(b.branch, 40);
+  if (!title) fail(400, 'MISSING_FIELDS', 'اكتب اسم الاختبار.');
+  if (grade && !EDU_GRADES_SERVER[grade]) fail(400, 'BAD_TRACK', 'الصف غير صحيح.');
+  if (grade && branch && !EDU_GRADES_SERVER[grade].includes(branch)) fail(400, 'BAD_TRACK', 'الصف والشعبة غير متوافقين.');
+  const row = await insert('exams', { title, subject, description, grade: grade || null, branch: branch || null, duration_minutes: Math.max(1, Number(b.duration_minutes || 30)), is_published: false, created_by: u.id });
+  await audit(u, 'exam_create', null, { exam_id: row.id });
+  return { ok: true, exam: row };
+};
+A.examquestionadd = async (req, res, b) => {
+  const u = need(await sessionUser(req), 'admin');
+  const e = await one('exams', [eq('id', b.exam_id)]); if (!e) fail(404, 'NOT_FOUND', 'الاختبار غير موجود.');
+  const text = clean(b.text || b.question, 2000), options = Array.isArray(b.options) ? b.options.map(x => clean(x, 500)).slice(0, 8) : [];
+  const correct_index = Number(b.correct_index);
+  if (!text || options.length < 2 || !Number.isInteger(correct_index) || correct_index < 0 || correct_index >= options.length) fail(400, 'BAD_QUESTION', 'السؤال والاختيارات والإجابة الصحيحة مطلوبة.');
+  const row = await insert('exam_questions', { exam_id: e.id, text, options, correct_index, points: Math.max(1, Number(b.points || 1)) });
+  await audit(u, 'exam_question_add', null, { exam_id: e.id, question_id: row.id });
+  return { ok: true, question: row };
+};
+A.exampublish = async (req, res, b) => {
+  const u = need(await sessionUser(req), 'admin'), e = await one('exams', [eq('id', b.id)]);
+  if (!e) fail(404, 'NOT_FOUND', 'الاختبار غير موجود.');
+  await patch('exams', [eq('id', e.id)], { is_published: !!b.published, updated_at: new Date().toISOString() });
+  await audit(u, 'exam_publish', null, { exam_id: e.id, published: !!b.published });
+  return { ok: true };
+};
+A.examlistadmin = async (req) => { need(await sessionUser(req), 'admin'); return { ok: true, exams: await find('exams', [], 'order=created_at.desc') }; };
+A.examattempts = async (req, res, b) => { need(await sessionUser(req), 'admin'); return { ok: true, attempts: await find('exam_attempts', b.exam_id ? [eq('exam_id', b.exam_id)] : [], 'order=submitted_at.desc') }; };
+
 A.sitecontent = async () => {
   const r = await one('site_content', [eq('id', 1)]);
   return { ok: true, teachers: r?.teachers || [], removed: r?.removed || [] };
 };
+A.teachers = async () => { const r = await one('site_content', [eq('id', 1)]); return { ok: true, teachers: r?.teachers || [], removed: r?.removed || [] }; };
+
 A.sitecontentsave = async (req, res, b) => {
   const u = need(await sessionUser(req), 'admin');
   const row = { teachers: Array.isArray(b.teachers) ? b.teachers : [], removed: Array.isArray(b.removed) ? b.removed : [], updated_at: new Date().toISOString() };
