@@ -1,0 +1,8 @@
+window.MozakraData = {
+  nav: [
+    ['home','الرئيسية','🏠'],['lessons','دروسي','📚'],['practice','تدريب وأسئلة','📝'],
+    ['notifications','الإشعارات','🔔'],['tickets','الدعم','💬'],['profile','حسابي','👤']
+  ],
+  gradeNames:{first:'الأول الثانوي',second:'الثاني الثانوي',third:'الثالث الثانوي'},
+  branchNames:{general:'عام',science:'علمي',literary:'أدبي',science_biology:'علمي علوم',science_math:'علمي رياضة'}
+};
