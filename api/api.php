@@ -4,6 +4,7 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
 $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+ini_set('session.gc_maxlifetime','2592000');
 session_set_cookie_params([
   'httponly' => true,
   'samesite' => 'Lax',
@@ -11,6 +12,16 @@ session_set_cookie_params([
   'path' => '/'
 ]);
 session_start();
+function setRememberCookie(bool $remember=false): void {
+  $https=(!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS']!=='off') || (($_SERVER['HTTP_X_FORWARDED_PROTO']??'')==='https');
+  setcookie(session_name(),session_id(),[
+    'expires'=>$remember?time()+2592000:0,
+    'httponly'=>true,
+    'samesite'=>'Lax',
+    'secure'=>$https,
+    'path'=>'/'
+  ]);
+}
 
 $configFile = __DIR__ . '/config.php';
 $config = file_exists($configFile) ? require $configFile : require __DIR__ . '/config.example.php';
@@ -236,7 +247,7 @@ try {
     }
     $id=nextId($users);
     $users[]=['id'=>$id,'email'=>$email,'phone'=>$phone,'school'=>$school,'governorate'=>$governorate,'grade'=>$grade,'password'=>password_hash($pass,PASSWORD_DEFAULT),'name'=>$name,'status'=>'active','state'=>'{}','created_at'=>$now,'updated_at'=>$now];
-    writeUsers($users); $_SESSION['uid']=$id;
+    writeUsers($users); session_regenerate_id(true); $_SESSION['uid']=$id; setRememberCookie(false);
     out(['ok'=>true,'authenticated'=>true,'user'=>['id'=>$id,'email'=>$email,'phone'=>$phone,'name'=>$name,'school'=>$school,'governorate'=>$governorate,'grade'=>$grade]]);
   }
   if ($action==='login' && $method==='POST') {
@@ -248,9 +259,9 @@ try {
     if(password_needs_rehash((string)$u['password'],PASSWORD_DEFAULT)){
       $users=allUsers(); foreach($users as &$x) if((int)$x['id']===(int)$u['id']){$x['password']=password_hash($pass,PASSWORD_DEFAULT);$x['updated_at']=time();} unset($x); writeUsers($users); $u=findUserById((int)$u['id']);
     }
-    $_SESSION['uid']=(int)$u['id']; out(['ok'=>true,'authenticated'=>true,'user'=>['id'=>(int)$u['id'],'email'=>$u['email']??'','phone'=>$u['phone']??'','name'=>$u['name']??'','school'=>$u['school']??'','governorate'=>$u['governorate']??'','grade'=>$u['grade']??'الثالث الثانوي — علمي علوم']]);
+    $_SESSION['uid']=(int)$u['id']; session_regenerate_id(true); setRememberCookie(!empty($d['remember'])); out(['ok'=>true,'authenticated'=>true,'user'=>['id'=>(int)$u['id'],'email'=>$u['email']??'','phone'=>$u['phone']??'','name'=>$u['name']??'','school'=>$u['school']??'','governorate'=>$u['governorate']??'','grade'=>$u['grade']??'الثالث الثانوي — علمي علوم']]);
   }
-  if ($action==='logout' && $method==='POST') { $_SESSION['uid']=null; out(['ok'=>true]); }
+  if ($action==='logout' && $method==='POST') { $_SESSION['uid']=null; setcookie(session_name(),'', ['expires'=>time()-3600,'httponly'=>true,'samesite'=>'Lax','secure'=>$https,'path'=>'/']); session_destroy(); out(['ok'=>true]); }
   if ($action==='profile' && $method==='GET') {
     $u=requireUser();
     out(['ok'=>true,'profile'=>['id'=>(int)$u['id'],'name'=>$u['name']??'','phone'=>$u['phone']??'','email'=>$u['email']??'','school'=>$u['school']??'','governorate'=>$u['governorate']??'','grade'=>$u['grade']??'الثالث الثانوي — علمي علوم']]);

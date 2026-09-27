@@ -46,9 +46,9 @@ async function initAuth(){
   AUTH.ready=true; render();
   if(AUTH.user && !S.onboarded) onboarding();
 }
-async function loginAccount(login,password){
+async function loginAccount(login,password,remember=false){
   AUTH.busy=true; renderAuth();
-  const d=await apiJSON("login",{method:"POST",body:JSON.stringify({login,password})});
+  const d=await apiJSON("login",{method:"POST",body:JSON.stringify({login,password,remember})});
   if(!d.ok){ AUTH.busy=false; renderAuth(authMessage(d.error)); return; }
   AUTH.user=d.user;
   const st=await apiJSON("state");

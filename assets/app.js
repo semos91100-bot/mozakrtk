@@ -193,27 +193,51 @@ async function askAI(text){
 function renderAuth(message=""){
   if(!AUTH.ready || AUTH.user){ $("#authLayer").innerHTML=""; return; }
   const mode=window.__authMode||"login";
-  $("#authLayer").innerHTML=`<div class="modal auth-modal"><div class="box auth-box" style="max-width:520px">
-    <a class="admin-entry" href="admin.html" title="دخول المشرف">⚙️ <span>دخول الأدمن</span></a>
-    <div class="between"><div><h1>مُذاكرة</h1><p class="muted sm">سجّل دخولك للمتابعة، أو اعمل حساب جديد واحفظ بياناتك وتقدمك.</p></div><span style="font-size:42px">📚</span></div>
-    <div class="row" style="margin:14px 0"><button class="chip ${mode==="login"?"on":""}" data-auth="login">تسجيل الدخول</button><button class="chip ${mode==="signup"?"on":""}" data-auth="signup">إنشاء حساب</button></div>
-    ${message?`<div class="card" style="margin-bottom:10px;border-color:var(--bad);color:var(--bad)">${esc(message)}</div>`:""}
-    ${mode==="signup"?`
-      <div class="grid g2">
-        <label class="field"><span>اسم الطالب *</span><input id="auth_name" autocomplete="name" placeholder="الاسم بالكامل"></label>
-        <label class="field"><span>رقم الموبايل *</span><input id="auth_phone" inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx"></label>
-        <label class="field"><span>المحافظة</span><input id="auth_governorate" placeholder="مثال: قنا"></label>
-        <label class="field"><span>المدرسة</span><input id="auth_school" placeholder="اسم المدرسة"></label>
+  const social=`<div class="auth-social" aria-label="خيارات تسجيل الدخول الاجتماعي">
+    <button type="button" class="auth-social-btn" data-auth-social="facebook" aria-label="Facebook"><span class="social-facebook">f</span><span>Facebook</span></button>
+    <button type="button" class="auth-social-btn" data-auth-social="google" aria-label="Google"><span class="social-google">G</span><span>Google</span></button>
+    <button type="button" class="auth-social-btn" data-auth-social="apple" aria-label="Apple"><span class="social-apple">●</span><span>Apple</span></button>
+  </div>`;
+  const passwordField=(autocomplete)=>`<label class="field auth-field"><span>كلمة المرور${mode==="signup"?" *":""}</span><span class="auth-input-wrap"><i aria-hidden="true">🔒</i><input id="auth_password" type="password" autocomplete="${autocomplete}" placeholder="${mode==="signup"?"8 أحرف على الأقل":"اكتب كلمة المرور"}" required><button type="button" class="auth-eye" data-auth-toggle-password aria-label="إظهار كلمة المرور">◉</button></span></label>`;
+  $("#authLayer").innerHTML=`<div class="modal auth-modal"><div class="box auth-box auth-shell">
+    <a class="admin-entry" href="admin.html" title="دخول المشرف">⚙️ <span>دخول المشرف</span></a>
+    <section class="auth-hero">
+      <span class="auth-star star-one">✦</span><span class="auth-star star-two">✧</span><span class="auth-star star-three">✦</span>
+      <div class="auth-mascot" aria-hidden="true"><span>🤓</span></div>
+      <p class="auth-kicker">طريقك للتفوق يبدأ بخطوة</p><h1>مُذاكرة</h1>
+      <p>ذاكر بذكاء، تابع تقدمك، وخلي هدفك قدامك كل يوم.</p>
+    </section>
+    <section class="auth-panel">
+      <div class="auth-tabs" role="tablist" aria-label="نوع الحساب">
+        <button type="button" class="auth-tab ${mode==="login"?"active":""}" data-auth="login" role="tab" aria-selected="${mode==="login"}">تسجيل الدخول</button>
+        <button type="button" class="auth-tab ${mode==="signup"?"active":""}" data-auth="signup" role="tab" aria-selected="${mode==="signup"}">إنشاء حساب</button>
       </div>
-      <label class="field"><span>البريد الإلكتروني (اختياري)</span><input id="auth_email" type="email" autocomplete="email" placeholder="مش مطلوب للتفعيل"></label>
-      <label class="field"><span>كلمة المرور *</span><input id="auth_password" type="password" autocomplete="new-password" placeholder="8 أحرف على الأقل"></label>
-      <label class="field"><span>تأكيد كلمة المرور *</span><input id="auth_password2" type="password" autocomplete="new-password" placeholder="اكتب كلمة المرور مرة تانية"></label>
-      <div class="card" style="margin:8px 0;border-color:var(--line)"><b>🔒 بدون تحقق بالبريد</b><div class="muted sm" style="margin-top:4px">بياناتك الأساسية تتسجل على حسابك، والإيميل اختياري فقط كبيان إضافي.</div></div>
-    `:`
-      <label class="field"><span>رقم الموبايل أو البريد الإلكتروني</span><input id="auth_login" autocomplete="username" placeholder="01xxxxxxxxx"></label>
-      <label class="field"><span>كلمة المرور</span><input id="auth_password" type="password" autocomplete="current-password" placeholder="كلمة المرور"></label>
-    `}
-    <button class="btn primary" style="width:100%;margin-top:8px" data-auth-submit="${mode}">${AUTH.busy?"جاري التنفيذ…":mode==="login"?"دخول":"إنشاء الحساب"}</button>
+      ${message?`<div class="auth-error" role="alert">${esc(message)}</div>`:""}
+      ${social}
+      ${mode==="signup"?`
+        <div class="auth-form">
+          <label class="field auth-field"><span>اسم الطالب *</span><span class="auth-input-wrap"><i aria-hidden="true">👤</i><input id="auth_name" autocomplete="name" placeholder="اكتب اسمك بالكامل" required></span></label>
+          <label class="field auth-field"><span>رقم الموبايل *</span><span class="auth-input-wrap"><i aria-hidden="true">📱</i><input id="auth_phone" inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx" required></span></label>
+          <div class="grid g2 auth-extra">
+            <label class="field auth-field"><span>المحافظة</span><input id="auth_governorate" placeholder="مثال: قنا"></label>
+            <label class="field auth-field"><span>المدرسة</span><input id="auth_school" placeholder="اسم المدرسة"></label>
+          </div>
+          <label class="field auth-field"><span>البريد الإلكتروني <small>(اختياري)</small></span><span class="auth-input-wrap"><i aria-hidden="true">✉</i><input id="auth_email" type="email" autocomplete="email" placeholder="name@example.com"></span></label>
+          ${passwordField("new-password")}
+          <label class="field auth-field"><span>تأكيد كلمة المرور *</span><span class="auth-input-wrap"><i aria-hidden="true">🔒</i><input id="auth_password2" type="password" autocomplete="new-password" placeholder="اكتب كلمة المرور مرة أخرى" required><button type="button" class="auth-eye" data-auth-toggle-password="auth_password2" aria-label="إظهار تأكيد كلمة المرور">◉</button></span></label>
+          <div class="auth-note"><span>🔐</span><div><b>حسابك جاهز للحفظ والمتابعة</b><small>لا نطلب رمز تحقق بالبريد. بريدك اختياري.</small></div></div>
+        </div>
+      `:`
+        <div class="auth-form">
+          <label class="field auth-field"><span>البريد الإلكتروني أو رقم الموبايل</span><span class="auth-input-wrap"><i aria-hidden="true">✉</i><input id="auth_login" autocomplete="username" placeholder="البريد أو 01xxxxxxxxx" required></span></label>
+          ${passwordField("current-password")}
+          <div class="auth-options"><label class="auth-remember"><input id="auth_remember" type="checkbox"><span>تذكّر هذا الجهاز</span></label><button type="button" class="auth-link" data-auth-forgot>نسيت كلمة المرور؟</button></div>
+          <div class="auth-note"><span>⚡</span><div><b>كل تقدمك في مكان واحد</b><small>سجّل دخولك لمتابعة دروسك وإنجازاتك.</small></div></div>
+        </div>
+      `}
+      <button type="button" class="auth-submit" data-auth-submit="${mode}" ${AUTH.busy?"disabled":""}><span>${AUTH.busy?"جاري التنفيذ…":mode==="login"?"تسجيل الدخول":"إنشاء حساب جديد"}</span><b aria-hidden="true">${mode==="login"?"←":"✦"}</b></button>
+      <p class="auth-terms">باستمرارك، أنت توافق على استخدام المنصة وفق إرشاداتها التعليمية.</p>
+    </section>
   </div></div>`;
 }
 
@@ -337,6 +361,7 @@ function render(){
   const bell=$("#bellDot"); if(bell) bell.hidden=!(S.notifOn&&notifications().length);
   if(seg[0]==="support" && AUTH.ready && AUTH.user && !SUPPORT.ready) setTimeout(()=>loadSupport(true),0);
   if(seg[0]!=="support") stopSupportPoll();
+  renderAuth();
   window.scrollTo(0,0);
 }
 addEventListener("hashchange",()=>{ render(); if(currentRoute()==="support") loadSupport(); else stopSupportPoll(); });
@@ -432,6 +457,11 @@ document.addEventListener("click",e=>{
     return;
   }
   const b=e.target.closest("[data-auth]"); if(b){ window.__authMode=b.dataset.auth; renderAuth(); return; }
+  const eye=e.target.closest("[data-auth-toggle-password]");
+  if(eye){const id=eye.dataset.authTogglePassword||"auth_password",field=document.getElementById(id);if(field){field.type=field.type==="password"?"text":"password";eye.setAttribute("aria-label",field.type==="password"?"إظهار كلمة المرور":"إخفاء كلمة المرور");}return;}
+  if(e.target.closest("[data-auth-forgot]")){toast("استعادة كلمة المرور تحتاج تفعيل إرسال البريد الإلكتروني على الخادم.");return;}
+  const social=e.target.closest("[data-auth-social]");
+  if(social){const names={apple:"Apple",google:"Google",facebook:"Facebook"};toast(`تسجيل الدخول عبر ${names[social.dataset.authSocial]||"الحساب الاجتماعي"} يحتاج إعداد OAuth أولًا.`);return;}
   const submit=e.target.closest("[data-auth-submit]");
   if(submit){
     const mode=submit.dataset.authSubmit, pass=$("#auth_password")?.value||"";
@@ -446,8 +476,13 @@ document.addEventListener("click",e=>{
         email:$("#auth_email")?.value.trim()||""
       },pass);
     } else {
-      loginAccount($("#auth_login")?.value.trim()||"",pass);
+      loginAccount($("#auth_login")?.value.trim()||"",pass,$("#auth_remember")?.checked||false);
     }
+  }
+});
+document.addEventListener("keydown",e=>{
+  if(e.key==="Enter"&&e.target.closest("#authLayer")&&!e.target.matches("button")){
+    e.preventDefault();$("[data-auth-submit]")?.click();
   }
 });
 initAuth();
