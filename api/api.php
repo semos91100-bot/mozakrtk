@@ -466,5 +466,8 @@ try {
 
   out(['ok'=>false,'error'=>'NOT_FOUND'],404);
 } catch(Throwable $e) {
-  out(['ok'=>false,'error'=>'SERVER_ERROR'],500);
+  $requestId=bin2hex(random_bytes(5));
+  error_log('[mozakra-api] request='.$requestId.' action='.preg_replace('/[^a-z0-9_-]/i','',(string)$action).' error='.get_class($e).': '.$e->getMessage());
+  $storageError=str_contains(strtolower($e->getMessage()),'blob') || str_contains(strtolower($e->getMessage()),'storage') || str_contains(strtolower($e->getMessage()),'persist');
+  out(['ok'=>false,'error'=>$storageError?'STORAGE_UNAVAILABLE':'SERVER_ERROR','request_id'=>$requestId],$storageError?503:500);
 }

@@ -279,8 +279,7 @@ function vProfile(){
 function vSettings(){
   return `<h1>الإعدادات</h1>
   <div class="card" style="margin-top:14px">
-    <div class="between" style="padding:8px 0"><div><b>الوضع الليلي</b><div class="sm muted">حاليًا: ${S.theme==="dark"?"ليلي":S.theme==="light"?"نهاري":"حسب إعدادات جهازك"}</div></div>
-      <div class="row"><button class="chip ${S.theme===""?"on":""}" data-act="theme" data-v="">تلقائي</button><button class="chip ${S.theme==="light"?"on":""}" data-act="theme" data-v="light">نهاري</button><button class="chip ${S.theme==="dark"?"on":""}" data-act="theme" data-v="dark">ليلي</button></div></div>
+    <div class="between" style="padding:8px 0"><div><b>خلفية الموقع</b><div class="sm muted">تم ضبط الموقع على التصميم الفاتح بخلفية بيضاء.</div></div><span class="chip on">☀️ فاتحة</span></div>
     <hr style="border:0;border-top:1px solid var(--line);margin:10px 0">
     <label class="field"><span>مدة جلسة المذاكرة (دقيقة)</span><input type="number" id="s_len" value="${S.sessionLen}" min="10" max="120" step="5"></label>
     <label class="field"><span>ميعاد مذاكرتك</span><select id="s_win">${["صباحًا","بعد الظهر","مساءً","بالليل"].map(w=>`<option ${S.windows===w?"selected":""}>${w}</option>`).join("")}</select></label>
@@ -366,7 +365,7 @@ function render(){
 }
 addEventListener("hashchange",()=>{ render(); if(currentRoute()==="support") loadSupport(); else stopSupportPoll(); });
 
-function applyTheme(){ if(S.theme) document.documentElement.dataset.theme=S.theme; else delete document.documentElement.dataset.theme; }
+function applyTheme(){ S.theme="light"; document.documentElement.dataset.theme="light"; }
 
 document.addEventListener("click",async e=>{
   const b=e.target.closest("[data-act]"); if(!b) return;
@@ -431,7 +430,6 @@ const _t=teachers;
 window.teachers=function(){ const m=new Map(); _t().forEach(t=>m.set(t.id,t)); return [...m.values()]; };
 
 $("#q").addEventListener("keydown",e=>{ if(e.key==="Enter"&&e.target.value.trim()) location.hash="#/search?q="+encodeURIComponent(e.target.value.trim()); });
-$("#btnTheme").addEventListener("click",()=>{ S.theme = S.theme==="dark"?"light":"dark"; applyTheme(); saveLocal(); render(); });
 $("#btnTimer").addEventListener("click",()=>location.hash="#/timer");
 $("#btnBell").addEventListener("click",()=>{
   const n=notifications();

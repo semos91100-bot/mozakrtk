@@ -32,7 +32,9 @@ function saveLocal(){
 }
 function apiUrl(action){ return `api/api.php?action=${encodeURIComponent(action)}`; }
 async function apiJSON(action,opts={}){
-  const r=await fetch(apiUrl(action),{credentials:"same-origin",headers:{"Content-Type":"application/json",...(opts.headers||{})},...opts});
+  let r;
+  try{r=await fetch(apiUrl(action),{credentials:"same-origin",headers:{"Content-Type":"application/json",...(opts.headers||{})},...opts});}
+  catch(e){return {ok:false,error:"NETWORK_ERROR"};}
   let d=null; try{d=await r.json();}catch(e){d={ok:false,error:"BAD_RESPONSE"};}
   if(!r.ok && !d.error) d.error="REQUEST_FAILED";
   return d;
@@ -84,6 +86,8 @@ function authMessage(code){
     PASSWORD_SHORT:"كلمة المرور لازم تكون 8 أحرف على الأقل.",
     PASSWORD_LONG:"كلمة المرور طويلة جدًا.",
     ACCOUNT_DISABLED:"الحساب موقوف من المشرف حاليًا.",
+    NETWORK_ERROR:"تعذر الاتصال بالخادم. تأكد من الإنترنت وجرب مرة أخرى.",
+    STORAGE_UNAVAILABLE:"تعذر حفظ الحساب في التخزين السحابي. أبلغ صاحب الموقع ليتحقق من إعداد Vercel Blob.",
     REQUEST_FAILED:"حصلت مشكلة في الاتصال بالسيرفر.",
     SERVER_ERROR:"حصل خطأ في السيرفر.",
     AI_NOT_CONFIGURED:"مدرس AI محتاج تفعيل مفتاح Gemini على السيرفر."
