@@ -297,7 +297,7 @@ A.oauth_start = async (req, res) => {
     const credentials = oauthCredentials(provider), base = oauthBaseUrl();
     const state = crypto.randomBytes(32).toString('hex'), nonce = crypto.randomBytes(32).toString('hex');
     oauthStateCookie(req, res, state, nonce, provider);
-    const redirectUri = `${base}/api/oauth`;
+    const redirectUri = `${base}/api/oauth-callback`;
     const params = provider === 'google'
       ? { client_id: credentials.clientId, redirect_uri: redirectUri, response_type: 'code', scope: 'openid email profile', state, nonce, prompt: 'select_account' }
       : { client_id: credentials.clientId, redirect_uri: redirectUri, response_type: 'code', response_mode: 'form_post', scope: 'name email', state, nonce };
@@ -318,7 +318,7 @@ A.oauth_callback = async (req, res) => {
     const provider = flow.provider, credentials = oauthCredentials(provider), code = String(body.code || req.query?.code || '');
     if (!code) throw new Error('لم يكتمل رد مزود تسجيل الدخول.');
     if (body.error || req.query?.error) throw new Error('تم إلغاء تسجيل الدخول أو رفضه. يمكنك الرجوع وتجربة مزود آخر.');
-    const redirectUri = `${oauthBaseUrl()}/api/oauth`;
+    const redirectUri = `${oauthBaseUrl()}/api/oauth-callback`;
     const tokenParams = provider === 'google'
       ? { code, client_id: credentials.clientId, client_secret: credentials.clientSecret, redirect_uri: redirectUri, grant_type: 'authorization_code' }
       : { code, client_id: credentials.clientId, client_secret: appleClientSecret(credentials), redirect_uri: redirectUri, grant_type: 'authorization_code' };

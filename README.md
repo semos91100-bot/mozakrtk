@@ -42,7 +42,7 @@
 
 - كلمات المرور تُخزن باستخدام `password_hash` ولا تُخزن كنص عادي.
 - جلسة تسجيل الدخول تستخدم Cookie محمية بـ HttpOnly وSameSite، مع اختيار تذكّر الجهاز.
-- مسارات المصادقة والبيانات تستخدم `/api/backend`; OAuth callback يستخدم `/api/oauth`.
+- مسارات المصادقة والبيانات تستخدم `/api/backend`; OAuth callback يستخدم `/api/oauth-callback`.
 - مفاتيح Gemini وVercel Blob وكود المشرف تُقرأ من متغيرات البيئة، ولا تُحفظ في ملفات JavaScript أو مستودع عام.
 - بيانات الطلاب تتضمن معلومات شخصية وبصمات كلمات المرور؛ استخدم Blob Store خاصًا فقط.
 - لا تضع مفتاح Gemini في `app.js` أو `data.js`.
@@ -59,7 +59,8 @@
 - `assets/app.js` — الاختبارات والمؤقت ومدرس AI والأحداث.
 - `api/api.php` — التسجيل والدخول والحفظ ومدرس AI.
 - `api/config.php` — يقرأ الإعدادات من متغيرات البيئة.
-- `api/oauth.php` — عنوان الرجوع الآمن لمزودي تسجيل الدخول.
+- `api/oauth-callback.js` — وظيفة Vercel لاستقبال رجوع Google وApple.
+- `api/oauth.php` — مسار OAuth للتشغيل على استضافة PHP فقط.
 - `api/storage/` — التخزين المحلي الاحتياطي (محمية بـ `.htaccess`).
 - `vercel-blob-bridge/` — خدمة اختيارية للتخزين الخاص في Vercel Blob.
 - `OAUTH-SETUP-AR.md` — خطوات إعداد Google وApple على النطاق المنشور.

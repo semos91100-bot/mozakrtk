@@ -6,8 +6,8 @@
 
 النطاق الحالي: `https://mozakrtk.vercel.app`
 
-- Google Authorized redirect URI: `https://mozakrtk.vercel.app/api/oauth`
-- Apple Return URL: `https://mozakrtk.vercel.app/api/oauth`
+- Google Authorized redirect URI: `https://mozakrtk.vercel.app/api/oauth-callback`
+- Apple Return URL: `https://mozakrtk.vercel.app/api/oauth-callback`
 - أضف `OAUTH_BASE_URL` في Vercel بقيمة `https://mozakrtk.vercel.app` دون شرطة مائلة أخيرة.
 
 إذا استخدمت نطاقًا مخصصًا لاحقًا، استبدل النطاق أعلاه في لوحة المزوّد وفي `OAUTH_BASE_URL`.
@@ -16,7 +16,7 @@
 
 1. افتح [Google Cloud Console](https://console.cloud.google.com/) وأنشئ OAuth client من النوع **Web application**.
 2. في Authorized JavaScript origins أضف `https://mozakrtk.vercel.app`.
-3. في Authorized redirect URIs أضف `https://mozakrtk.vercel.app/api/oauth`.
+3. في Authorized redirect URIs أضف `https://mozakrtk.vercel.app/api/oauth-callback`.
 4. أضف متغيري Vercel التاليين للـProduction (وPreview عند الاختبار):
    - `GOOGLE_CLIENT_ID`
    - `GOOGLE_CLIENT_SECRET`
@@ -26,7 +26,7 @@
 يتطلب تسجيل Apple حساب Apple Developer نشطًا.
 
 1. فعّل Sign in with Apple وأنشئ Services ID واربطه بـApp ID.
-2. في إعداد Website URLs سجّل النطاق `mozakrtk.vercel.app` وعنوان الرجوع `https://mozakrtk.vercel.app/api/oauth`.
+2. في إعداد Website URLs سجّل النطاق `mozakrtk.vercel.app` وعنوان الرجوع `https://mozakrtk.vercel.app/api/oauth-callback`.
 3. أنشئ مفتاح Sign in with Apple من نوع `.p8`.
 4. أضف متغيرات Vercel التالية للـProduction (وPreview عند الاختبار):
    - `APPLE_SERVICE_ID` — Services ID

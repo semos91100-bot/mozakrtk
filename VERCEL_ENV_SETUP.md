@@ -29,4 +29,4 @@
 3. سجّل الخروج ثم ادخل بالهاتف وكلمة المرور نفسها.
 4. جرّب Google أو Apple فقط بعد ضبط مفاتيح ذلك المزود وعنوان callback.
 
-تعمل API عبر وظائف Node في `/api/backend`، وOAuth callback عبر `/api/oauth`. لا تعتمد صفحات Vercel على `api/api.php` لأن Vercel لا يشغّل PHP هنا.
+تعمل API عبر وظائف Node في `/api/backend`، وOAuth callback عبر `/api/oauth-callback`. لا تعتمد صفحات Vercel على `api/api.php` لأن Vercel لا يشغّل PHP هنا.
