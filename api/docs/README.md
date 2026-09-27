@@ -26,7 +26,7 @@
 
 بيانات OWNER الافتراضية:
 - البريد: `semos91100@gmail.com`
-- كلمة المرور: `alton112233`
+- كلمة المرور: تُضبط في متغير البيئة `OWNER_PASSWORD`، ولا تُحفظ في Git.
 
 > لا تضع `SUPABASE_SERVICE_ROLE_KEY` داخل JavaScript أو HTML أو GitHub.
 

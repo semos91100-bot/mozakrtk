@@ -98,13 +98,18 @@ function vSchedule(){
 
 /* ---------- المواد ---------- */
 function vSubjects(){
-  return `<h1 style="margin-bottom:14px">المواد</h1>
+  return `<div class="between" style="margin-bottom:14px"><h1>المواد</h1><a class="btn" href="#/curricula">🗂️ المناهج حسب الصف والشعبة</a></div>
   <div class="grid g2">${Object.keys(CUR).map(sid=>{const p=progress(sid);const acc=accuracy(a=>a.s===sid);return `
     <a class="card subjcard" style="--c:${SUB(sid).c};text-decoration:none" href="#/subject/${sid}">
       <div class="between"><h2>${SUB(sid).emoji} ${SUB(sid).name}</h2><span class="sm muted">${CUR[sid].units.length} أبواب</span></div>
       <div class="bar" style="margin:10px 0 6px"><i style="width:${p.pct}%;background:${SUB(sid).c}"></i></div>
       <div class="between sm muted"><span>${p.done} من ${p.total} درس</span><span>${acc!==null?"صحّة إجاباتك "+acc+"%":"لسه ما حلّيتش أسئلة"}</span></div>
     </a>`}).join("")}</div>`;
+}
+function vCurricula(){
+  return `<div class="between" style="margin-bottom:14px"><div><h1>المناهج الدراسية</h1><p class="muted sm">المواد والمسارات الرسمية للمرحلة الثانوية — العام الدراسي 2026/2027.</p></div><a class="btn" href="#/subjects">العودة إلى دروس المنصة</a></div>
+  <div class="grid g2">${CURRICULA.map(grade=>`<section class="card"><h2>${esc(grade.grade)}</h2><div class="grid" style="gap:12px;margin-top:12px">${grade.tracks.map(track=>`<article class="card"><h3>${esc(track.name)}</h3>${track.sections.map(section=>`<div style="margin-top:12px"><b>${esc(section.title)}</b><div class="row" style="margin-top:7px">${section.subjects.map(subject=>`<span class="chip">${esc(subject)}</span>`).join("")}</div></div>`).join("")}</article>`).join("")}</div></section>`).join("")}</div>
+  <div class="card" style="margin-top:14px"><b>تنبيه حول المحتوى التفصيلي</b><p class="sm muted" style="margin:6px 0 0">هذه خريطة للمواد والمسارات، وليست فهرسًا كاملًا لأبواب الكتب. الدروس والملخصات التفصيلية تُضاف تدريجيًا؛ ولن نعرض مادة بلا محتوى على أنها مكتملة. قائمة الثانوية العامة وفق قرار الوزارة 234 لسنة 2025، ومسارات البكالوريا وفق إعلان الوزارة في 17 أغسطس 2026.</p><p class="sm" style="margin:8px 0 0">المراجع: <a href="https://moe.gov.eg/ar/what-s-on/news/17-9-25-1/" target="_blank" rel="noopener">قرار مواد الثانوية العامة</a> · <a href="https://moe.gov.eg/what-s-on/news/mo-17-8-i/" target="_blank" rel="noopener">مواد البكالوريا المصرية</a> · <a href="https://ellibrary.moe.gov.eg/EgyptianBaccalaureate/" target="_blank" rel="noopener">مكتبة البكالوريا 2026/2027</a></p></div>`;
 }
 function vSubject(sid){
   const s=SUB(sid); if(!s) return vNotFound();

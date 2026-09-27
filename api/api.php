@@ -297,6 +297,7 @@ function oauthFindOrCreateUser(string $provider,array $claims,string $name=''): 
       $foundIndex=$i;break;
     }
   }
+  if($foundIndex===null) throw new RuntimeException('OAUTH_ACCOUNT_NOT_FOUND');
   $now=time();
   if($foundIndex!==null){
     $u=$users[$foundIndex]; if(($u['status']??'active')!=='active') throw new RuntimeException('This account is disabled');
@@ -304,9 +305,6 @@ function oauthFindOrCreateUser(string $provider,array $claims,string $name=''): 
     $u['oauth']=is_array($u['oauth']??null)?$u['oauth']:[]; $u['oauth'][$provider]=$sub;
     if($email!==''){$u['email']=$email;$u['email_verified']=true;} if(trim($name)!=='' && trim((string)($u['name']??''))==='') $u['name']=cleanText($name,160);
     $u['updated_at']=$now; $users[$foundIndex]=$u;
-  } else {
-    $id=nextId($users); $users[]=['id'=>$id,'email'=>$email,'email_verified'=>$email!=='','phone'=>'','school'=>'','governorate'=>'','grade'=>'الثالث الثانوي — علمي علوم','password'=>password_hash(bin2hex(random_bytes(32)),PASSWORD_DEFAULT),'oauth'=>[$provider=>$sub],'name'=>cleanText($name?:('طالب '.($provider==='google'?'Google':'Apple')),160),'status'=>'active','state'=>'{}','created_at'=>$now,'updated_at'=>$now];
-    $foundIndex=count($users)-1;
   }
   writeUsers($users); $user=$users[$foundIndex]; session_regenerate_id(true); $_SESSION['uid']=(int)$user['id']; setRememberCookie(false);
   return ['id'=>(int)$user['id'],'email'=>$user['email']??'','phone'=>$user['phone']??'','name'=>$user['name']??'','school'=>$user['school']??'','governorate'=>$user['governorate']??'','grade'=>$user['grade']??'الثالث الثانوي — علمي علوم','oauth_providers'=>array_values(array_keys($user['oauth']??[]))];
@@ -322,6 +320,7 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if($action==='oauth_start'){
   $provider=(string)($_GET['provider']??''); $mode=(string)($_GET['mode']??'login');
   if(!in_array($provider,['google','apple'],true)||!in_array($mode,['login','signup'],true)) oauthErrorPage('طلب تسجيل الدخول غير صالح.',400);
+  if($mode==='signup') oauthErrorPage('إنشاء الحساب متاح برقم الهاتف وكلمة المرور فقط.',403);
   if(!oauthConfigured($provider)) oauthErrorPage('تسجيل '.$provider.' غير مفعّل بعد. على صاحب الموقع إعداد بيانات OAuth في الاستضافة واتباع OAUTH-SETUP-AR.md.');
   try{
     $state=bin2hex(random_bytes(32)); $nonce=bin2hex(random_bytes(32));
@@ -360,7 +359,7 @@ if($action==='oauth_callback'){
     }
     oauthFindOrCreateUser($provider,$claims,$name);
     header('Location: '.oauthBaseUrl().'/study.html',true,303); exit;
-  }catch(Throwable $e){error_log('[mozakra-oauth] callback '.$provider.' '.get_class($e).': '.$e->getMessage());oauthErrorPage('لم نتمكن من التحقق من حسابك أو حفظه. تحقق من إعدادات '.($provider==='google'?'Google':'Apple').' وأن التخزين متصل، ثم حاول مرة أخرى.');}
+  }catch(Throwable $e){error_log('[mozakra-oauth] callback '.$provider.' '.get_class($e).': '.$e->getMessage());if($e->getMessage()==='OAUTH_ACCOUNT_NOT_FOUND') oauthErrorPage('لا يوجد حساب سابق مرتبط بهذا الدخول. أنشئ حسابًا برقم الهاتف وكلمة المرور أولًا.',403);oauthErrorPage('لم نتمكن من التحقق من حسابك أو حفظه. تحقق من إعدادات '.($provider==='google'?'Google':'Apple').' وأن التخزين متصل، ثم حاول مرة أخرى.');}
 }
 
 try {
