@@ -1,0 +1,22 @@
+مُذاكرة — تشغيل الموقع
+
+متطلبات الموقع:
+- استضافة PHP 8 أو أحدث مع cURL وHTTPS.
+- التخزين المحلي يعمل افتراضيًا في api/storage.
+
+ربط Vercel Blob (اختياري):
+1) انشر مجلد vercel-blob-bridge كمشروع Vercel منفصل (Root Directory = vercel-blob-bridge).
+2) أنشئ Blob Store خاصًا (Private) واربطه بمشروع الجسر.
+3) أضف BLOB_BRIDGE_SECRET عشوائيًا قويًا إلى Environment Variables في Vercel.
+4) في استضافة PHP اضبط BLOB_BRIDGE_URL على رابط خدمة Vercel، وBLOB_BRIDGE_SECRET على القيمة نفسها.
+5) فعّل PHP cURL، ثم اختبر إنشاء حساب وتسجيل الدخول وحفظ التقدم ولوحة المشرف.
+
+إعدادات موقع PHP:
+- GEMINI_API_KEY: مفتاح Gemini (اختياري لوظائف مدرس AI).
+- GEMINI_MODEL: اختياري؛ القيمة الافتراضية gemini-3.5-flash.
+- ADMIN_CODE: كود قوي للوحة المشرف ويجب تعيينه قبل النشر.
+- ADMIN_NAME: اختياري.
+- BLOB_BRIDGE_URL وBLOB_BRIDGE_SECRET: مطلوبان معًا لاستخدام Blob؛ إذا غابا معًا فسيستخدم الموقع التخزين المحلي.
+
+بيانات الطلاب والمحتوى والدعم تخزن في ملفات JSON. نسخة Blob خاصة، وليست قاعدة بيانات علائقية. لا تضع أي مفاتيح أو أكواد سرية في ملفات الواجهة أو Git أو ملف ZIP.
+راجع BLOB-SETUP-AR.md وvercel-blob-bridge/README.md لمزيد من التفاصيل.
