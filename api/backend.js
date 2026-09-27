@@ -20,7 +20,9 @@ const fail = (s, c, m) => { throw new HttpError(s, c, m); };
 function cfg() {
   const url = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
   const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
-  const secret = process.env.SESSION_SECRET || '';
+  // Prefer a dedicated secret; derive a domain-separated fallback so existing
+  // Vercel projects without SESSION_SECRET can still authenticate securely.
+  const secret = process.env.SESSION_SECRET || (key ? crypto.createHmac('sha256', key).update('mozakra/session-signing/v1').digest('hex') : '');
   if (!url || !key) fail(500, 'CONFIG_MISSING', 'إعدادات السيرفر ناقصة: أضف SUPABASE_URL و SUPABASE_SERVICE_ROLE_KEY في Vercel ثم اعمل Redeploy.');
   if (secret.length < 8) fail(500, 'CONFIG_MISSING', 'أضف SESSION_SECRET (نص عشوائي طويل) في متغيرات Vercel ثم اعمل Redeploy.');
   return { url, key, secret };
@@ -68,7 +70,15 @@ const insert = async (table, row) => (await sb(table, { method: 'POST', body: ro
 const patch = (table, filters, body) => sb(table, { method: 'PATCH', query: filters.join('&'), body });
 
 /* ---------- helpers ---------- */
-const pub = u => u && Object.fromEntries(SAFE.map(k => [k, u[k] ?? null]));
+const pub = u => {
+  if (!u) return u;
+  const out = Object.fromEntries(SAFE.map(k => [k, u[k] ?? null]));
+  const profile = u.state?.profile || {};
+  out.school = u.school ?? profile.school ?? '';
+  out.governorate = u.governorate ?? profile.governorate ?? '';
+  out.oauth_providers = Array.isArray(u.state?.oauth_providers) ? u.state.oauth_providers : Object.keys(u.state?.oauth || {});
+  return out;
+};
 const clean = (s, n = 500) => String(s ?? '').trim().slice(0, n);
 
 function phoneCore(p) {
@@ -114,9 +124,10 @@ function cookieOf(req, name) {
 }
 const isHttps = req => String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
 function setCookie(req, res, value, maxAge) {
-  const attrs = [`mz_session=${encodeURIComponent(value)}`, 'Path=/', 'HttpOnly', 'SameSite=Lax', `Max-Age=${Math.max(0, Math.floor(maxAge))}`];
+  const attrs = [`mz_session=${encodeURIComponent(value)}`, 'Path=/', 'HttpOnly', 'SameSite=Lax'];
+  if (maxAge !== null) attrs.push(`Max-Age=${Math.max(0, Math.floor(maxAge))}`);
   if (isHttps(req)) attrs.push('Secure');
-  res.setHeader('Set-Cookie', attrs.join('; '));
+  setCookieHeader(res, attrs.join('; '));
 }
 async function sessionUser(req) {
   const t = readToken(cookieOf(req, 'mz_session'));
@@ -175,10 +186,204 @@ const A = {};
 
 A.health = async () => ({ ok: true, time: new Date().toISOString() });
 
-A.me = async (req) => ({ ok: true, user: pub(await sessionUser(req)) });
+/* ---------- Google / Apple OAuth ---------- */
+const oauthB64 = value => Buffer.from(JSON.stringify(value)).toString('base64url');
+function oauthBaseUrl() {
+  const raw = clean(process.env.OAUTH_BASE_URL, 300).replace(/\/$/, '');
+  let u;
+  try { u = new URL(raw); } catch { fail(503, 'OAUTH_NOT_CONFIGURED', 'أضف OAUTH_BASE_URL إلى إعدادات Vercel.'); }
+  if (u.protocol !== 'https:' || u.pathname !== '/' || u.search || u.hash || u.username || u.password)
+    fail(503, 'OAUTH_NOT_CONFIGURED', 'يجب أن يكون OAUTH_BASE_URL عنوان الموقع الأساسي عبر HTTPS.');
+  return u.origin;
+}
+function setCookieHeader(res, line) {
+  const old = res.getHeader('Set-Cookie');
+  res.setHeader('Set-Cookie', [...(old ? (Array.isArray(old) ? old : [old]) : []), line]);
+}
+function oauthStateCookie(req, res, state, nonce, provider) {
+  const payload = oauthB64({ state, nonce, provider, exp: Date.now() + 10 * 60 * 1000 });
+  const sig = crypto.createHmac('sha256', cfg().secret).update(payload).digest('base64url');
+  setCookieHeader(res, `mz_oauth=${payload}.${sig}; Path=/; Max-Age=600; HttpOnly; Secure; SameSite=None`);
+}
+function clearOauthCookie(res) {
+  setCookieHeader(res, 'mz_oauth=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=None');
+}
+function oauthStateFromRequest(req) {
+  const raw = String(req.headers.cookie || '').split(/;\s*/).find(x => x.startsWith('mz_oauth='))?.slice(9) || '';
+  const [payload, signature] = raw.split('.');
+  if (!payload || !signature) return null;
+  const expected = crypto.createHmac('sha256', cfg().secret).update(payload).digest('base64url');
+  if (!safeEq(signature, expected)) return null;
+  try {
+    const value = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    return value.exp > Date.now() ? value : null;
+  } catch { return null; }
+}
+function oauthCredentials(provider) {
+  if (provider === 'google') {
+    const clientId = clean(process.env.GOOGLE_CLIENT_ID, 500), clientSecret = process.env.GOOGLE_CLIENT_SECRET || '';
+    if (!clientId || !clientSecret) fail(503, 'OAUTH_NOT_CONFIGURED', 'تسجيل Google يحتاج GOOGLE_CLIENT_ID وGOOGLE_CLIENT_SECRET في Vercel.');
+    return { clientId, clientSecret };
+  }
+  const clientId = clean(process.env.APPLE_SERVICE_ID, 500), teamId = clean(process.env.APPLE_TEAM_ID, 100),
+    keyId = clean(process.env.APPLE_KEY_ID, 100), privateKey = String(process.env.APPLE_PRIVATE_KEY || '');
+  if (!clientId || !teamId || !keyId || !privateKey)
+    fail(503, 'OAUTH_NOT_CONFIGURED', 'تسجيل Apple يحتاج APPLE_SERVICE_ID وAPPLE_TEAM_ID وAPPLE_KEY_ID وAPPLE_PRIVATE_KEY في Vercel.');
+  return { clientId, teamId, keyId, privateKey };
+}
+const oauthB64Part = value => Buffer.from(JSON.stringify(value)).toString('base64url');
+function appleClientSecret(c) {
+  const now = Math.floor(Date.now() / 1000), header = oauthB64Part({ alg: 'ES256', kid: c.keyId });
+  const payload = oauthB64Part({ iss: c.teamId, iat: now, exp: now + 3600, aud: 'https://appleid.apple.com', sub: c.clientId });
+  const input = `${header}.${payload}`;
+  const key = String(c.privateKey).replace(/\\n/g, '\n');
+  const signature = crypto.sign('sha256', Buffer.from(input), { key, dsaEncoding: 'ieee-p1363' }).toString('base64url');
+  return `${input}.${signature}`;
+}
+async function oauthFetchJson(url, params) {
+  const response = await fetch(url, { method: params ? 'POST' : 'GET', headers: params ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {},
+    body: params ? new URLSearchParams(params).toString() : undefined, signal: AbortSignal.timeout(15000) });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error('OAuth provider rejected request');
+  return body;
+}
+async function verifyIdentityToken(token, provider, clientId, expectedNonce) {
+  const parts = String(token || '').split('.');
+  if (parts.length !== 3) throw new Error('Invalid identity token');
+  const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+  const claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+  if (header.alg !== 'RS256' || !header.kid) throw new Error('Invalid signing algorithm');
+  const jwksUrl = provider === 'google' ? 'https://www.googleapis.com/oauth2/v3/certs' : 'https://appleid.apple.com/auth/keys';
+  const jwks = await oauthFetchJson(jwksUrl);
+  const jwk = (jwks.keys || []).find(k => k.kid === header.kid && k.kty === 'RSA');
+  if (!jwk) throw new Error('Signing key unavailable');
+  const publicKey = crypto.createPublicKey({ key: jwk, format: 'jwk' });
+  const validSignature = crypto.verify('RSA-SHA256', Buffer.from(`${parts[0]}.${parts[1]}`), publicKey, Buffer.from(parts[2], 'base64url'));
+  const issuers = provider === 'google' ? ['accounts.google.com', 'https://accounts.google.com'] : ['https://appleid.apple.com'];
+  const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+  const nonce = String(claims.nonce || '');
+  const nonceOk = nonce === expectedNonce || (provider === 'apple' && nonce === crypto.createHash('sha256').update(expectedNonce).digest('hex'));
+  const now = Math.floor(Date.now() / 1000);
+  if (!validSignature || !issuers.includes(claims.iss) || !audiences.includes(clientId) || !claims.sub ||
+      Number(claims.exp) <= now || Number(claims.iat) > now + 120 || !nonceOk) throw new Error('Identity token validation failed');
+  return claims;
+}
+function oauthErrorHtml(res, message, status = 400) {
+  const safe = String(message).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+  res.statusCode = status; res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.setHeader('Cache-Control', 'no-store');
+  res.end(`<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>تعذر تسجيل الدخول</title><body style="font:16px system-ui;background:#fff;color:#182a42;display:grid;place-items:center;min-height:100vh"><main style="max-width:540px;margin:20px;padding:26px;border:1px solid #e5eaf2;border-radius:20px"><h1>تعذر تسجيل الدخول</h1><p>${safe}</p><a href="/study.html">العودة لموقع مُذاكرة</a></main></body></html>`);
+}
+async function oauthUser(provider, claims, suppliedName = '') {
+  const subject = clean(claims.sub, 255), email = clean(claims.email, 254).toLowerCase();
+  if (!subject) fail(401, 'OAUTH_INVALID_IDENTITY', 'تعذر التحقق من هوية الحساب.');
+  const username = `${provider}_${crypto.createHash('sha256').update(subject).digest('hex').slice(0, 18)}`;
+  const existingUser = await one('users', [eq('username', username)]);
+  if (existingUser) {
+    if (existingUser.state?.oauth?.[provider] !== subject) fail(409, 'OAUTH_IDENTITY_CONFLICT', 'تعذر ربط هوية الدخول بهذا الحساب.');
+    return existingUser;
+  }
+  const emailVerified = claims.email_verified === true || claims.email_verified === 'true' || claims.email_verified === 1;
+  if (email && emailVerified && await one('users', [ilike('email', email)]))
+    fail(409, 'OAUTH_EMAIL_EXISTS', 'هذا البريد مرتبط بحساب موجود. سجّل الدخول بالحساب الحالي أولًا بدل إنشاء حساب مكرر.');
+  const name = clean(suppliedName || claims.name || (email ? email.split('@')[0] : `طالب ${provider}`), 80) || `طالب ${provider}`;
+  return await insert('users', { email: email && emailVerified ? email : null, phone: null, username, name, role: 'student',
+    password_hash: hashPw(crypto.randomBytes(32).toString('hex')), state: { onboarded: false, profile: {}, oauth: { [provider]: subject }, oauth_providers: [provider] } });
+}
+A.oauth_start = async (req, res) => {
+  const provider = clean(req.query?.provider, 20).toLowerCase();
+  try {
+    const mode = clean(req.query?.mode, 20).toLowerCase() || 'login';
+    if (!['google', 'apple'].includes(provider) || !['login', 'signup'].includes(mode)) fail(400, 'BAD_OAUTH_REQUEST', 'طلب تسجيل الدخول غير صالح.');
+    const credentials = oauthCredentials(provider), base = oauthBaseUrl();
+    const state = crypto.randomBytes(32).toString('hex'), nonce = crypto.randomBytes(32).toString('hex');
+    oauthStateCookie(req, res, state, nonce, provider);
+    const redirectUri = `${base}/api/oauth-callback`;
+    const params = provider === 'google'
+      ? { client_id: credentials.clientId, redirect_uri: redirectUri, response_type: 'code', scope: 'openid email profile', state, nonce, prompt: 'select_account' }
+      : { client_id: credentials.clientId, redirect_uri: redirectUri, response_type: 'code', response_mode: 'form_post', scope: 'name email', state, nonce };
+    const destination = provider === 'google' ? 'https://accounts.google.com/o/oauth2/v2/auth' : 'https://appleid.apple.com/auth/authorize';
+    res.statusCode = 302; res.setHeader('Location', `${destination}?${new URLSearchParams(params)}`); res.end();
+  } catch (e) {
+    oauthErrorHtml(res, e instanceof HttpError ? e.message : 'تعذر بدء تسجيل الدخول. تحقق من إعدادات مزود الدخول في Vercel.', e instanceof HttpError ? e.status : 503);
+  }
+};
+A.oauth_callback = async (req, res) => {
+  let flow;
+  try {
+    flow = oauthStateFromRequest(req);
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const incomingState = String(body.state || req.query?.state || '');
+    clearOauthCookie(res);
+    if (!flow || flow.state !== incomingState || !['google', 'apple'].includes(flow.provider)) throw new Error('انتهت جلسة الدخول أو لم تطابق. ابدأ المحاولة من جديد.');
+    const provider = flow.provider, credentials = oauthCredentials(provider), code = String(body.code || req.query?.code || '');
+    if (!code) throw new Error('لم يكتمل رد مزود تسجيل الدخول.');
+    if (body.error || req.query?.error) throw new Error('تم إلغاء تسجيل الدخول أو رفضه. يمكنك الرجوع وتجربة مزود آخر.');
+    const redirectUri = `${oauthBaseUrl()}/api/oauth-callback`;
+    const tokenParams = provider === 'google'
+      ? { code, client_id: credentials.clientId, client_secret: credentials.clientSecret, redirect_uri: redirectUri, grant_type: 'authorization_code' }
+      : { code, client_id: credentials.clientId, client_secret: appleClientSecret(credentials), redirect_uri: redirectUri, grant_type: 'authorization_code' };
+    const tokens = await oauthFetchJson(provider === 'google' ? 'https://oauth2.googleapis.com/token' : 'https://appleid.apple.com/auth/token', tokenParams);
+    const claims = await verifyIdentityToken(tokens.id_token, provider, credentials.clientId, flow.nonce);
+    if (provider === 'google' && !(claims.email_verified === true || claims.email_verified === 'true' || claims.email_verified === 1)) throw new Error('يجب استخدام بريد Google موثّق.');
+    let suppliedName = '';
+    if (provider === 'apple') {
+      try { const n = typeof body.user === 'string' ? JSON.parse(body.user) : body.user; suppliedName = [n?.name?.firstName, n?.name?.lastName].filter(Boolean).join(' '); } catch {}
+    }
+    const user = await oauthUser(provider, claims, suppliedName);
+    setCookie(req, res, signToken(user.id), 30 * 86400);
+    await audit(user, `login_${provider}`);
+    res.statusCode = 303; res.setHeader('Location', '/study.html'); res.end();
+  } catch (e) {
+    console.error('[oauth callback]', flow?.provider || 'unknown', e?.name || 'Error');
+    oauthErrorHtml(res, e instanceof HttpError ? e.message : (e?.message || 'تعذر التحقق من الحساب. راجع إعدادات Google أو Apple في Vercel.'), e instanceof HttpError ? e.status : 400);
+  }
+};
+
+A.me = async (req) => {
+  const user = await sessionUser(req);
+  return { ok: true, authenticated: !!user, user: pub(user) };
+};
+
+A.state = async (req, res, b) => {
+  const user = need(await sessionUser(req));
+  if (String(req.method || 'GET').toUpperCase() !== 'GET') return A.savestate(req, res, b);
+  return { ok: true, state: user.state || {} };
+};
+
+A.content = async () => {
+  const result = await A.sitecontent();
+  return { ok: true, content: { teachers: result.teachers || [], lessons: [], questions: [], teacher_overrides: {}, disabled_teachers: [] } };
+};
+
+A.profile = async (req, res, b) => {
+  const user = need(await sessionUser(req));
+  const name = clean(b.name, 80), email = clean(b.email, 254).toLowerCase();
+  const phone = b.phone == null || b.phone === '' ? null : canonPhone(b.phone);
+  if (name && name.length < 2) fail(400, 'BAD_NAME', 'اكتب اسمًا صحيحًا.');
+  if (email && !validEmail(email)) fail(400, 'BAD_EMAIL', 'البريد الإلكتروني غير صحيح.');
+  if (b.phone && !phone) fail(400, 'BAD_PHONE', 'رقم الموبايل المصري غير صحيح.');
+  if (email) {
+    const existing = await one('users', [ilike('email', email)]);
+    if (existing && String(existing.id) !== String(user.id)) fail(409, 'DUPLICATE', 'البريد الإلكتروني مستخدم من قبل.');
+  }
+  if (phone) {
+    for (const variant of phoneVariants(phone)) {
+      const existing = await one('users', [eq('phone', variant)]);
+      if (existing && String(existing.id) !== String(user.id)) fail(409, 'DUPLICATE', 'رقم الموبايل مستخدم من قبل.');
+    }
+  }
+  const currentState = user.state || {}, profile = { ...(currentState.profile || {}) };
+  for (const key of ['school', 'governorate']) if (b[key] !== undefined) profile[key] = clean(b[key], 120);
+  const update = { state: { ...currentState, profile }, updated_at: new Date().toISOString() };
+  if (name) update.name = name;
+  if (b.email !== undefined) update.email = email || null;
+  if (b.phone !== undefined) update.phone = phone;
+  await patch('users', [eq('id', user.id)], update);
+  return { ok: true, user: pub({ ...user, ...update }) };
+};
 
 A.login = async (req, res, b) => {
-  const idf = clean(b.identifier || b.phone || b.email || b.username, 120);
+  const idf = clean(b.identifier || b.login || b.phone || b.email || b.username, 120);
   const pw = String(b.password ?? '');
   if (!idf || !pw) fail(400, 'MISSING_FIELDS', 'اكتب رقم الموبايل أو البريد أو اليوزر نيم وكلمة المرور.');
   const own = owners().find(o => o.email === idf.toLowerCase());
@@ -190,19 +395,21 @@ A.login = async (req, res, b) => {
     user = await findByIdentifier(idf);
     if (!user || !checkPw(pw, user.password_hash)) fail(401, 'INVALID_CREDENTIALS', 'بيانات الدخول غير صحيحة.');
   }
-  setCookie(req, res, signToken(user.id), 30 * 86400);
+  setCookie(req, res, signToken(user.id), b.remember === false ? null : 30 * 86400);
   await audit(user, 'login');
   return { ok: true, user: pub(user) };
 };
 
 A.signup = async (req, res, b) => {
   const name = clean(b.name, 80), requestedUsername = clean(b.username, 30).toLowerCase(), pw = String(b.password ?? '');
-  const phone = canonPhone(b.phone), grade = clean(b.grade, 20), branch = clean(b.branch, 30);
+  const phone = canonPhone(b.phone), email = clean(b.email, 254).toLowerCase(), grade = clean(b.grade, 20), branch = clean(b.branch, 30);
   if (name.length < 2) fail(400, 'BAD_NAME', 'اكتب اسمك.');
+  if (email && !validEmail(email)) fail(400, 'BAD_EMAIL', 'البريد الإلكتروني غير صحيح.');
   if (requestedUsername && !/^[a-z0-9_.]{3,20}$/.test(requestedUsername)) fail(400, 'BAD_USERNAME', 'اليوزر نيم 3–20 حرفًا إنجليزيًا أو أرقامًا أو _ أو .');
   if (!phone) fail(400, 'BAD_PHONE', 'رقم الموبايل المصري غير صحيح.');
   if (pw.length < 6) fail(400, 'BAD_PASSWORD', 'كلمة المرور 6 أحرف على الأقل.');
   if ((grade || branch) && !EDU_GRADES_SERVER[grade]?.includes(branch)) fail(400, 'BAD_TRACK', 'اختر الصف والشعبة أو اتركهما فارغين لإكمالهما لاحقًا.');
+  if (email && await one('users', [ilike('email', email)])) fail(409, 'DUPLICATE', 'البريد الإلكتروني مستخدم من قبل.');
   for (const v of phoneVariants(phone)) if (await one('users', [eq('phone', v)])) fail(409, 'DUPLICATE', 'رقم الموبايل مستخدم من قبل.');
   let username = requestedUsername || null;
   if (username && await one('users', [eq('username', username)])) fail(409, 'DUPLICATE', 'اليوزر نيم مستخدم من قبل.');
@@ -212,9 +419,11 @@ A.signup = async (req, res, b) => {
     let i = 1;
     while (await one('users', [eq('username', username)])) username = `${base}_${i++}`;
   }
+  const profile = {};
+  for (const key of ['school', 'governorate']) if (b[key] !== undefined) profile[key] = clean(b[key], 120);
   const user = await insert('users', {
-    name, username, phone, role: 'student', password_hash: hashPw(pw),
-    state: { ...(grade && branch ? { grade, branch, onboarded: true } : { onboarded: false }) },
+    name, username, email: email || null, phone, role: 'student', password_hash: hashPw(pw),
+    state: { ...(grade && branch ? { grade, branch, onboarded: true } : { onboarded: false }), profile },
   });
   setCookie(req, res, signToken(user.id), 30 * 86400);
   await audit(user, 'signup');
@@ -315,6 +524,29 @@ A.tickets = async (req) => {
   const u = need(await sessionUser(req));
   const rows = await find('tickets', rank(u.role) >= 1 && u.role !== 'student' ? [] : [eq('user_id', u.id)], 'order=updated_at.desc');
   return { ok: true, tickets: rows };
+};
+async function legacySupportTicket(ticket) {
+  if (!ticket) return null;
+  const messages = await find('ticket_messages', [eq('ticket_id', ticket.id)], 'order=created_at.asc');
+  return { id: ticket.id, reason: ticket.subject, status: ticket.status === 'resolved' ? 'closed' : ticket.status,
+    updated_at: ticket.updated_at, messages: messages.map(m => ({ sender: m.from_role === 'student' ? 'user' : 'admin', text: m.text, created_at: m.created_at })) };
+}
+A.support_user = async (req) => {
+  const user = need(await sessionUser(req));
+  const result = await A.tickets(req);
+  const active = (result.tickets || []).find(t => !['closed', 'resolved'].includes(t.status));
+  return { ok: true, ticket: await legacySupportTicket(active || null) };
+};
+A.support_create = async (req, res, b) => {
+  const created = await A.ticketcreate(req, res, { subject: 'طلب دعم فني', text: b.reason || b.text });
+  return { ok: true, ticket: await legacySupportTicket(created.ticket) };
+};
+A.support_send = async (req, res, b) => {
+  const user = need(await sessionUser(req));
+  const list = await A.tickets(req), ticket = (list.tickets || []).find(t => !['closed', 'resolved'].includes(t.status));
+  if (!ticket) fail(404, 'NOT_FOUND', 'لا يوجد طلب دعم مفتوح.');
+  await A.ticketreply(req, res, { id: ticket.id, text: b.text });
+  return { ok: true, ticket: await legacySupportTicket(await one('tickets', [eq('id', ticket.id)])) };
 };
 async function loadTicket(u, id) {
   const t = await one('tickets', [eq('id', clean(id, 40))]);
@@ -508,7 +740,7 @@ A.dbhealth = async (req) => {
     try { await sb(t, { query: 'select=*&limit=1' }); out[t] = 'ok'; } catch (e) { out[t] = e.code || 'error'; }
   }
   try { await sb('users', { query: 'select=username&limit=1' }); out.users_username = 'ok'; } catch (e) { out.users_username = e.code || 'error'; }
-  return { ok: Object.values(out).every(v => v === 'ok'), tables: out, env: { url: !!process.env.SUPABASE_URL, key: !!process.env.SUPABASE_SERVICE_ROLE_KEY, secret: !!process.env.SESSION_SECRET, gemini: !!process.env.GEMINI_API_KEY } };
+  return { ok: Object.values(out).every(v => v === 'ok'), tables: out, env: { url: !!process.env.SUPABASE_URL, key: !!process.env.SUPABASE_SERVICE_ROLE_KEY, secret: !!(process.env.SESSION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY), gemini: !!process.env.GEMINI_API_KEY } };
 };
 
 A.ai = async (req, res, b) => {
@@ -532,10 +764,12 @@ module.exports = async function handler(req, res) {
     let b = req.body;
   if (typeof b === 'string') { try { b = JSON.parse(b); } catch { b = {}; } }
   b = (b && typeof b === 'object') ? b : {};
-    const name = String(req.query?.action || b.action || 'health').replace(/[^a-z]/gi, '').toLowerCase();
+    const name = String(req.query?.action || b.action || 'health').replace(/[^a-z_]/gi, '').toLowerCase();
     const fn = A[name];
     if (!fn) fail(404, 'UNKNOWN_ACTION', 'إجراء غير معروف: ' + name);
-    return res.status(200).json(await fn(req, res, b));
+    const result = await fn(req, res, b);
+    if (res.writableEnded) return;
+    return res.status(200).json(result);
   } catch (e) {
     if (e instanceof HttpError) return res.status(e.status).json({ ok: false, error: e.code, message: e.message });
     console.error(e);
