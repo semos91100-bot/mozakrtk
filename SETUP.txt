@@ -3,6 +3,7 @@
 متطلبات الموقع:
 - استضافة PHP 8 أو أحدث مع cURL وHTTPS.
 - التخزين المحلي يعمل افتراضيًا في api/storage.
+- index.html هي صفحة التعريف الرئيسية، وزر «زيارة الموقع» يفتح تطبيق الدراسة الموجود في study.html.
 
 ربط Vercel Blob (اختياري):
 1) انشر مجلد vercel-blob-bridge كمشروع Vercel منفصل (Root Directory = vercel-blob-bridge).

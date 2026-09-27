@@ -1,46 +1,97 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>مُذاكرة — منصة تالتة ثانوي علمي علوم</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@300;400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/styles.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f7f9fc">
+  <meta name="description" content="مُذاكرتك منصة تعليمية تساعدك على تنظيم المذاكرة، متابعة تقدمك، ومراجعة دروسك واختباراتك في مكان واحد.">
+  <title>مُذاكرتك — خليك أقرب لهدفك</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@300;400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/landing.css">
 </head>
 <body>
-<div class="app">
-  <aside class="rail">
-    <div class="brand">
-      <div class="mark">م</div>
-      <div><b>مُذاكرة</b><small>تالتة ثانوي — علمي علوم</small></div>
-    </div>
-    <nav class="nav" id="nav"></nav>
-  </aside>
+  <a class="skip-link" href="#main">انتقل للمحتوى</a>
+  <header class="site-header">
+    <a class="brand" href="index.html" aria-label="مُذاكرتك — الرئيسية">
+      <span class="brand-mark">م</span>
+      <span class="brand-copy"><strong>مُذاكرتك</strong><small>ذاكر بخطوة واثقة</small></span>
+    </a>
+    <button class="menu-toggle" type="button" aria-label="فتح القائمة" aria-expanded="false" aria-controls="site-nav"><span></span><span></span><span></span></button>
+    <nav class="site-nav" id="site-nav" aria-label="القائمة الرئيسية">
+      <a href="#features">المميزات</a>
+      <a href="#how">كيف تبدأ؟</a>
+      <a href="#about">عن المنصة</a>
+      <a class="nav-cta" href="study.html">زيارة الموقع <span aria-hidden="true">←</span></a>
+    </nav>
+  </header>
 
-  <div class="main">
-    <header class="topbar">
-      <div class="search">
-        <span>🔎</span>
-        <input id="q" type="search" placeholder="دوّر على درس، قانون، سؤال، مدرّس…" autocomplete="off">
+  <main id="main">
+    <section class="hero section-wrap">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="eyebrow-dot"></span> منصة تعليمية للثانوية العامة</div>
+        <h1>مُذاكرتك…<br><span>خطوتك الأقرب</span><br>للهدف اللي تستحقه.</h1>
+        <p class="hero-lead">رتّب مذاكرتك، راجع دروسك، واختبر نفسك — كل اللي تحتاجه عشان تذاكر بهدوء وتعرف أنت وصلت لفين.</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="study.html">زيارة الموقع <span aria-hidden="true">←</span></a>
+          <a class="button button-secondary" href="#features">اكتشف المميزات <span aria-hidden="true">↓</span></a>
+        </div>
+        <div class="hero-proof"><span class="proof-icon">✦</span><span>خطة واضحة، ومتابعة تشجّعك تكمل.</span></div>
       </div>
-      <button class="iconbtn" id="btnTimer" title="مؤقت المذاكرة">⏱️</button>
-      <button class="iconbtn" id="btnBell" title="الإشعارات">🔔<span class="dot" id="bellDot" hidden></span></button>
-      <button class="iconbtn" id="btnTheme" title="الوضع الليلي">🌙</button>
-    </header>
-    <main class="view" id="view"></main>
-  </div>
-</div>
-<nav class="tabbar" id="tabbar"></nav>
-<div id="layer"></div>
-<div id="authLayer"></div>
-<a href="#/support" class="support-float" data-support-float aria-label="الدعم الفني" title="الدعم الفني">🛠️<span>الدعم الفني</span></a>
+      <div class="hero-visual" aria-label="طالبة تذاكر في المكتبة">
+        <div class="image-frame"><img src="assets/landing-study.jpg" alt="طالبة تراجع دروسها وتذاكر في المكتبة" fetchpriority="high"></div>
+        <div class="image-shade"></div>
+        <div class="floating-card progress-card">
+          <span class="float-icon mint">✓</span><span><small>كل إنجاز يبدأ بخطوة</small><strong>تابع تقدمك يومًا بيوم</strong></span>
+        </div>
+        <div class="floating-card plan-card">
+          <span class="float-icon gold">◷</span><span><small>وقتك له قيمة</small><strong>خطة مذاكرة على مقاسك</strong></span>
+        </div>
+        <span class="decor decor-a">✳</span><span class="decor decor-b">✦</span>
+      </div>
+    </section>
 
-<!-- ترتيب الملفات مهم: data ثم core ثم views ثم app -->
-<script src="assets/data.js"></script>
-<script src="assets/core.js"></script>
-<script src="assets/views.js"></script>
-<script src="assets/app.js"></script>
+    <section class="trust-strip" aria-label="أدوات تساعدك على المذاكرة">
+      <div class="section-wrap trust-inner"><span>مكان واحد يجمع:</span><b>📚 الدروس</b><i></i><b>🗓️ تنظيم الوقت</b><i></i><b>✍️ الاختبارات</b><i></i><b>📈 متابعة التقدم</b></div>
+    </section>
+
+    <section class="features section-wrap" id="features">
+      <div class="section-heading"><span class="section-tag">كل اللي تحتاجه للمذاكرة</span><h2>خلي مجهودك <span>أوضح وأسهل</span></h2><p>بدل ما تحتار تبدأ منين، أدوات بسيطة تساعدك تمشي بخطة وتراجع اللي أنجزته.</p></div>
+      <div class="feature-grid">
+        <article class="feature-card feature-blue"><span class="feature-icon">🗓️</span><h3>نظّم يومك</h3><p>رتّب وقت المذاكرة وحدد أهدافك اليومية بطريقة عملية تناسب يومك.</p><a href="study.html">ابدأ التخطيط <span>←</span></a></article>
+        <article class="feature-card feature-mint"><span class="feature-icon">📚</span><h3>راجع دروسك</h3><p>ارجع للمحتوى والملخصات التعليمية في مكان واحد، وقت ما تحتاج.</p><a href="study.html">شوف المحتوى <span>←</span></a></article>
+        <article class="feature-card feature-peach"><span class="feature-icon">✍️</span><h3>اختبر فهمك</h3><p>تدرّب على الأسئلة وتابع إجاباتك عشان تعرف نقاط قوتك واللي محتاج مراجعة.</p><a href="study.html">ابدأ المراجعة <span>←</span></a></article>
+        <article class="feature-card feature-lilac"><span class="feature-icon">📈</span><h3>تابع تقدمك</h3><p>شوف إنجازك وجلساتك وسلسلة الأيام اللي التزمت فيها بالمذاكرة.</p><a href="study.html">تابع إنجازك <span>←</span></a></article>
+      </div>
+    </section>
+
+    <section class="how-section" id="how">
+      <div class="section-wrap how-layout">
+        <div class="how-copy"><span class="section-tag">بداية بسيطة</span><h2>ابدأ بخطوة،<br><span>وكمل على مهلك.</span></h2><p>مش مطلوب تخلص كل حاجة مرة واحدة. اختار هدفًا صغيرًا، ابدأ جلستك، وخلي كل يوم يقربك من اللي بتتمناه.</p><a class="button button-primary" href="study.html">يلا نبدأ المذاكرة <span aria-hidden="true">←</span></a></div>
+        <div class="steps-list">
+          <article class="step"><span class="step-number">١</span><div><h3>افتح حسابك</h3><p>سجّل الدخول أو أنشئ حسابًا لحفظ تقدمك ومتابعته.</p></div></article>
+          <article class="step"><span class="step-number">٢</span><div><h3>اختار هدفك</h3><p>حدد وقتك والمواد اللي حابب تركز عليها النهارده.</p></div></article>
+          <article class="step"><span class="step-number">٣</span><div><h3>ذاكر واحتفل بتقدمك</h3><p>ابدأ، حلّ، وارجع تابع إنجازك خطوة بخطوة.</p></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="about-section section-wrap" id="about">
+      <div class="about-mark">م</div><div><span class="section-tag">مُذاكرتك</span><h2>مذاكرتك تستاهل مكانًا يشجعك.</h2><p>صممنا المنصة عشان تساعدك تجمع خطتك ومحتواك وتقدمك في مساحة واحدة بسيطة. خليك مركز على خطوتك الجاية، وسيب الباقي يمشي بالتدريج.</p></div>
+      <a class="button button-dark" href="study.html">زيارة الموقع الآن <span aria-hidden="true">←</span></a>
+    </section>
+  </main>
+
+  <footer class="site-footer"><div class="section-wrap footer-inner"><a class="brand footer-brand" href="index.html"><span class="brand-mark">م</span><span class="brand-copy"><strong>مُذاكرتك</strong><small>كل يوم خطوة لقدام</small></span></a><p>ابدأ من مكانك، وقرّب لهدفك خطوة كل يوم.</p><a href="study.html">زيارة الموقع <span aria-hidden="true">←</span></a></div><div class="section-wrap copyright">© مُذاكرتك — منصة تساعدك على الدراسة وتنظيم المذاكرة.</div></footer>
+
+  <script>
+    const menuButton=document.querySelector('.menu-toggle');
+    const siteNav=document.querySelector('.site-nav');
+    menuButton.addEventListener('click',()=>{const open=menuButton.getAttribute('aria-expanded')==='true';menuButton.setAttribute('aria-expanded',String(!open));siteNav.classList.toggle('is-open',!open)});
+    siteNav.addEventListener('click',event=>{if(event.target.closest('a')){menuButton.setAttribute('aria-expanded','false');siteNav.classList.remove('is-open')}});
+    const revealObserver=new IntersectionObserver(entries=>entries.forEach(entry=>{if(entry.isIntersecting){entry.target.classList.add('revealed');revealObserver.unobserve(entry.target)}}),{threshold:.12});
+    document.querySelectorAll('.feature-card,.step,.about-section').forEach(element=>revealObserver.observe(element));
+  </script>
 </body>
 </html>

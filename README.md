@@ -18,11 +18,11 @@
 
 ## تشغيل سريع
 
-1. انشر واجهة الموقع على استضافة تدعم PHP 8+.
+1. انشر محتويات المجلد على استضافة تدعم PHP 8+؛ الصفحة التعريفية تفتح تلقائيًا من `index.html`.
 2. أضف `GEMINI_API_KEY` و`ADMIN_CODE` كمتغيرات بيئة في استضافة PHP؛ لا تضع الأسرار داخل الملفات.
 3. عند تفعيل Vercel Blob، انشر مجلد `vercel-blob-bridge` كمشروع Vercel مستقل، واربطه بـ Blob Store خاص.
 4. اضبط `BLOB_BRIDGE_URL` و`BLOB_BRIDGE_SECRET` في استضافة PHP. إذا لم تضبطهما، يستخدم الموقع التخزين المحلي.
-5. اتبع `BLOB-SETUP-AR.md` أو `vercel-blob-bridge/README.md` لخطوات الربط الكاملة.
+5. زر «زيارة الموقع» ينقل الطالب إلى التطبيق في `study.html`. اتبع `BLOB-SETUP-AR.md` أو `vercel-blob-bridge/README.md` لخطوات الربط الكاملة.
 
 ### لماذا مفتاح Gemini مطلوب؟
 
@@ -49,7 +49,9 @@
 
 ## الملفات
 
-- `index.html` — واجهة الموقع.
+- `index.html` — الصفحة التعريفية الرئيسية.
+- `study.html` — تطبيق المذاكرة وتسجيل الدخول.
+- `assets/landing.css` و`assets/landing-study.jpg` — تنسيق وصورة الصفحة التعريفية.
 - `assets/styles.css` — التصميم الأصلي.
 - `assets/data.js` — المنهج والمحتوى والأسئلة والمدرسون وروابطهم (عدّل هنا لأي إضافة).
 - `assets/core.js` — الحالة والحفظ والمزامنة والحساب.
