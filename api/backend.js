@@ -285,15 +285,14 @@ async function oauthUser(provider, claims, suppliedName = '') {
   const emailVerified = claims.email_verified === true || claims.email_verified === 'true' || claims.email_verified === 1;
   if (email && emailVerified && await one('users', [ilike('email', email)]))
     fail(409, 'OAUTH_EMAIL_EXISTS', 'هذا البريد مرتبط بحساب موجود. سجّل الدخول بالحساب الحالي أولًا بدل إنشاء حساب مكرر.');
-  const name = clean(suppliedName || claims.name || (email ? email.split('@')[0] : `طالب ${provider}`), 80) || `طالب ${provider}`;
-  return await insert('users', { email: email && emailVerified ? email : null, phone: null, username, name, role: 'student',
-    password_hash: hashPw(crypto.randomBytes(32).toString('hex')), state: { onboarded: false, profile: {}, oauth: { [provider]: subject }, oauth_providers: [provider] } });
+  fail(403, 'OAUTH_SIGNUP_DISABLED', 'إنشاء الحساب متاح برقم الهاتف وكلمة المرور فقط.');
 }
 A.oauth_start = async (req, res) => {
   const provider = clean(req.query?.provider, 20).toLowerCase();
   try {
     const mode = clean(req.query?.mode, 20).toLowerCase() || 'login';
     if (!['google', 'apple'].includes(provider) || !['login', 'signup'].includes(mode)) fail(400, 'BAD_OAUTH_REQUEST', 'طلب تسجيل الدخول غير صالح.');
+    if (mode === 'signup') fail(403, 'OAUTH_SIGNUP_DISABLED', 'إنشاء الحساب متاح برقم الهاتف وكلمة المرور فقط.');
     const credentials = oauthCredentials(provider), base = oauthBaseUrl();
     const state = crypto.randomBytes(32).toString('hex'), nonce = crypto.randomBytes(32).toString('hex');
     oauthStateCookie(req, res, state, nonce, provider);

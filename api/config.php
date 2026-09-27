@@ -3,8 +3,8 @@
 return [
   'gemini_api_key' => getenv('GEMINI_API_KEY') ?: '',
   'gemini_model' => getenv('GEMINI_MODEL') ?: 'gemini-3.5-flash',
-  'admin_code' => getenv('01270826363') ?: '',
-  'admin_name' => getenv('alton') ?: 'المشرف',
+  'admin_code' => getenv('ADMIN_CODE') ?: '',
+  'admin_name' => getenv('ADMIN_NAME') ?: 'المشرف',
   'oauth_base_url' => getenv('OAUTH_BASE_URL') ?: '',
   'google_client_id' => getenv('GOOGLE_CLIENT_ID') ?: '',
   'google_client_secret' => getenv('GOOGLE_CLIENT_SECRET') ?: '',
