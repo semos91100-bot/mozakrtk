@@ -193,11 +193,10 @@ async function askAI(text){
 function renderAuth(message=""){
   if(!AUTH.ready || AUTH.user){ $("#authLayer").innerHTML=""; return; }
   const mode=window.__authMode||"login";
-  const social=`<div class="auth-social" aria-label="خيارات تسجيل الدخول الاجتماعي">
-    <button type="button" class="auth-social-btn" data-auth-social="facebook" aria-label="Facebook"><span class="social-facebook">f</span><span>Facebook</span></button>
-    <button type="button" class="auth-social-btn" data-auth-social="google" aria-label="Google"><span class="social-google">G</span><span>Google</span></button>
-    <button type="button" class="auth-social-btn" data-auth-social="apple" aria-label="Apple"><span class="social-apple">●</span><span>Apple</span></button>
-  </div>`;
+  const social=`<div class="auth-social" aria-label="تسجيل سريع بالحساب الاجتماعي">
+    <a class="auth-social-btn google-oauth" href="api/api.php?action=oauth_start&amp;provider=google&amp;mode=${mode}" aria-label="المتابعة باستخدام Google"><span class="social-google">G</span><span>Google</span></a>
+    <a class="auth-social-btn apple-oauth" href="api/api.php?action=oauth_start&amp;provider=apple&amp;mode=${mode}" aria-label="المتابعة باستخدام Apple"><svg class="social-apple" viewBox="0 0 24 24" aria-hidden="true"><path fill="#fff" d="M16.7 12.7c0-2.2 1.8-3.3 1.9-3.4-1-1.5-2.6-1.7-3.2-1.7-1.4-.1-2.7.8-3.4.8-.7 0-1.8-.8-3-.8-1.6 0-3.1 1-3.9 2.4-1.7 2.9-.4 7.2 1.2 9.6.8 1.2 1.7 2.5 3 2.5 1.2-.1 1.7-.8 3.1-.8s1.9.8 3.2.8c1.3 0 2.1-1.2 2.9-2.4.9-1.3 1.3-2.7 1.3-2.7s-3.1-1.2-3.1-4.3ZM14.4 6c.6-.8 1-1.9.9-3-1 .1-2.1.7-2.7 1.4-.6.7-1.1 1.8-1 2.9 1 .1 2.1-.5 2.8-1.3Z"/></svg><span>Apple</span></a>
+  </div><div class="auth-divider"><span>أو بالبريد أو رقم الموبايل</span></div>`;
   const passwordField=(autocomplete)=>`<label class="field auth-field"><span>كلمة المرور${mode==="signup"?" *":""}</span><span class="auth-input-wrap"><i aria-hidden="true">🔒</i><input id="auth_password" type="password" autocomplete="${autocomplete}" placeholder="${mode==="signup"?"8 أحرف على الأقل":"اكتب كلمة المرور"}" required><button type="button" class="auth-eye" data-auth-toggle-password aria-label="إظهار كلمة المرور">◉</button></span></label>`;
   $("#authLayer").innerHTML=`<div class="modal auth-modal"><div class="box auth-box auth-shell">
     <a class="admin-entry" href="admin.html" title="دخول المشرف">⚙️ <span>دخول المشرف</span></a>
@@ -205,7 +204,7 @@ function renderAuth(message=""){
       <span class="auth-star star-one">✦</span><span class="auth-star star-two">✧</span><span class="auth-star star-three">✦</span>
       <div class="auth-mascot" aria-hidden="true"><span>🤓</span></div>
       <p class="auth-kicker">طريقك للتفوق يبدأ بخطوة</p><h1>مُذاكرة</h1>
-      <p>ذاكر بذكاء، تابع تقدمك، وخلي هدفك قدامك كل يوم.</p>
+      <p>مساحة هادئة تجمع خطتك ودروسك وتقدمك — خطوة صغيرة كل يوم تقرّبك من هدفك.</p>
     </section>
     <section class="auth-panel">
       <div class="auth-tabs" role="tablist" aria-label="نوع الحساب">
@@ -225,7 +224,7 @@ function renderAuth(message=""){
           <label class="field auth-field"><span>البريد الإلكتروني <small>(اختياري)</small></span><span class="auth-input-wrap"><i aria-hidden="true">✉</i><input id="auth_email" type="email" autocomplete="email" placeholder="name@example.com"></span></label>
           ${passwordField("new-password")}
           <label class="field auth-field"><span>تأكيد كلمة المرور *</span><span class="auth-input-wrap"><i aria-hidden="true">🔒</i><input id="auth_password2" type="password" autocomplete="new-password" placeholder="اكتب كلمة المرور مرة أخرى" required><button type="button" class="auth-eye" data-auth-toggle-password="auth_password2" aria-label="إظهار تأكيد كلمة المرور">◉</button></span></label>
-          <div class="auth-note"><span>🔐</span><div><b>حسابك جاهز للحفظ والمتابعة</b><small>لا نطلب رمز تحقق بالبريد. بريدك اختياري.</small></div></div>
+      <div class="auth-note"><span>🔐</span><div><b>حسابك جاهز للحفظ والمتابعة</b><small>المتابعة بـ Google وApple أو التسجيل برقم الهاتف.</small></div></div>
         </div>
       `:`
         <div class="auth-form">
@@ -252,7 +251,7 @@ function vProfile(){
     <div class="card">
       <h2 style="margin-bottom:10px">بيانات الطالب</h2>
       <label class="field"><span>الاسم</span><input id="p_name" value="${esc(AUTH.user?.name||S.name)}"></label>
-      <label class="field"><span>رقم الموبايل</span><input id="p_phone" inputmode="tel" value="${esc(AUTH.user?.phone||"")}"></label>
+      <label class="field"><span>رقم الموبايل ${AUTH.user?.oauth_providers?.length?"(اختياري)":""}</span><input id="p_phone" inputmode="tel" value="${esc(AUTH.user?.phone||"")}" placeholder="${AUTH.user?.oauth_providers?.length?"يمكنك إضافته لاحقًا":"01xxxxxxxxx"}"></label>
       <label class="field"><span>المحافظة</span><input id="p_governorate" value="${esc(AUTH.user?.governorate||"")}"></label>
       <label class="field"><span>المدرسة</span><input id="p_school" value="${esc(AUTH.user?.school||"")}"></label>
       <label class="field"><span>البريد الإلكتروني (اختياري)</span><input id="p_email" type="email" value="${esc(AUTH.user?.email||"")}"></label>
@@ -458,8 +457,6 @@ document.addEventListener("click",e=>{
   const eye=e.target.closest("[data-auth-toggle-password]");
   if(eye){const id=eye.dataset.authTogglePassword||"auth_password",field=document.getElementById(id);if(field){field.type=field.type==="password"?"text":"password";eye.setAttribute("aria-label",field.type==="password"?"إظهار كلمة المرور":"إخفاء كلمة المرور");}return;}
   if(e.target.closest("[data-auth-forgot]")){toast("استعادة كلمة المرور تحتاج تفعيل إرسال البريد الإلكتروني على الخادم.");return;}
-  const social=e.target.closest("[data-auth-social]");
-  if(social){const names={apple:"Apple",google:"Google",facebook:"Facebook"};toast(`تسجيل الدخول عبر ${names[social.dataset.authSocial]||"الحساب الاجتماعي"} يحتاج إعداد OAuth أولًا.`);return;}
   const submit=e.target.closest("[data-auth-submit]");
   if(submit){
     const mode=submit.dataset.authSubmit, pass=$("#auth_password")?.value||"";

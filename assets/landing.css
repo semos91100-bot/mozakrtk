@@ -25,3 +25,19 @@ body,.site-header{background-color:#fff}
 .copyright{border-top-color:#e7edf3;color:#718198}
 
 .how-section{background:#fff;border-block:1px solid #edf1f6}
+
+/* Professional finishing: crisp white canvas, subtle surfaces, and keyboard focus. */
+:root{--paper:#fff;--line:#e7edf4;--shadow:0 22px 65px rgba(26,48,81,.13)}
+.site-header{box-shadow:0 3px 16px rgba(19,41,71,.035)}
+.nav-cta{background:linear-gradient(110deg,#2468d8,#177fe0 56%,#15b89e);box-shadow:0 7px 18px rgba(36,104,216,.16)}
+.hero{padding-block:72px 76px}
+.image-frame{border-radius:30% 22px 30% 22px;box-shadow:0 26px 65px rgba(24,50,83,.17)}
+.feature-card{box-shadow:0 12px 30px rgba(27,51,85,.045)}
+.feature-card:hover{border-color:#cad9ed}
+.how-section{background:linear-gradient(180deg,#fff,#f8fbff 50%,#fff)}
+.about-section{background:linear-gradient(115deg,#f4fbfa,#f1f6ff);box-shadow:0 14px 38px rgba(26,48,81,.05)}
+.site-footer{background:#fff;color:#14243b;border-top:1px solid #e7edf3}
+.footer-inner p,.footer-brand .brand-copy small{color:#65758b}
+.site-footer a:last-child{color:#2368bf}
+.copyright{border-top-color:#e7edf3;color:#718198}
+a:focus-visible,button:focus-visible{outline:3px solid rgba(36,104,216,.42);outline-offset:3px}

@@ -4,10 +4,13 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
 $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+$oauthAction=(string)($_GET['action']??'');
+$oauthProviderHint=(string)($_GET['provider']??'');
+$oauthCrossSite=$https && ($oauthAction==='oauth_callback' || ($oauthAction==='oauth_start' && $oauthProviderHint==='apple'));
 ini_set('session.gc_maxlifetime','2592000');
 session_set_cookie_params([
   'httponly' => true,
-  'samesite' => 'Lax',
+  'samesite' => $oauthCrossSite?'None':'Lax',
   'secure' => $https,
   'path' => '/'
 ]);
@@ -208,6 +211,106 @@ function cleanQuestion(array $q): array {
     'q'=>cleanText($q['q']??'',1500), 'o'=>$opts, 'a'=>max(0,(int)($q['a']??0)), 'e'=>cleanText($q['e']??'',2000)
   ];
 }
+function oauthConfigured(string $provider): bool {
+  global $config;
+  return $provider==='google'
+    ? !empty($config['google_client_id']) && !empty($config['google_client_secret'])
+    : ($provider==='apple' && !empty($config['apple_service_id']) && !empty($config['apple_team_id']) && !empty($config['apple_key_id']) && !empty($config['apple_private_key']));
+}
+function oauthBaseUrl(): string {
+  global $config;
+  $base=rtrim(trim((string)($config['oauth_base_url']??'')),'/');
+  $parts=parse_url($base);
+  if(!$parts || empty($parts['host']) || !in_array(strtolower((string)($parts['scheme']??'')),['https','http'],true)) oauthErrorPage('إعداد OAUTH_BASE_URL غير صحيح على الاستضافة.');
+  $local=in_array(strtolower((string)$parts['host']),['localhost','127.0.0.1'],true);
+  if(!$local && strtolower((string)$parts['scheme'])!=='https') oauthErrorPage('يلزم نشر الموقع عبر HTTPS لتسجيل الدخول الاجتماعي.');
+  if(isset($parts['user'])||isset($parts['pass'])||isset($parts['query'])||isset($parts['fragment'])) oauthErrorPage('إعداد رابط الموقع غير صالح.');
+  return $base;
+}
+function oauthRedirectUri(): string { return oauthBaseUrl().'/api/oauth.php'; }
+function oauthErrorPage(string $message,int $status=503): never {
+  http_response_code($status); header('Content-Type: text/html; charset=utf-8'); header('Cache-Control: no-store');
+  $safe=htmlspecialchars($message,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+  echo '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>تعذر تسجيل الدخول</title><body style="margin:0;background:#fff;color:#182a42;font:16px system-ui,Arial;display:grid;place-items:center;min-height:100vh"><main style="max-width:520px;margin:20px;padding:28px;border:1px solid #e1e8f1;border-radius:20px;box-shadow:0 16px 45px #14243b18"><h1 style="font-size:22px">تعذر تسجيل الدخول</h1><p style="line-height:1.8;color:#60718a">'.$safe.'</p><a style="display:inline-block;padding:11px 16px;border-radius:11px;background:#2468d8;color:white;text-decoration:none" href="../study.html">العودة للموقع</a></main></body></html>'; exit;
+}
+function oauthB64UrlDecode(string $value): string|false { $pad=strlen($value)%4; if($pad) $value.=str_repeat('=',4-$pad); return base64_decode(strtr($value,'-_','+/'),true); }
+function oauthDerLength(int $length): string {
+  if($length<128) return chr($length);
+  $bytes=''; while($length>0){$bytes=chr($length&255).$bytes;$length>>=8;} return chr(0x80|strlen($bytes)).$bytes;
+}
+function oauthDer(int $tag,string $data): string { return chr($tag).oauthDerLength(strlen($data)).$data; }
+function oauthRsaJwkPem(array $jwk): string {
+  if(($jwk['kty']??'')!=='RSA'||empty($jwk['n'])||empty($jwk['e'])) throw new RuntimeException('Unsupported signing key');
+  $n=oauthB64UrlDecode((string)$jwk['n']); $e=oauthB64UrlDecode((string)$jwk['e']); if($n===false||$e===false) throw new RuntimeException('Invalid RSA signing key');
+  $integer=fn($v)=>oauthDer(0x02,(ord($v[0])&0x80)?"\0".$v:$v);
+  $rsa=oauthDer(0x30,$integer($n).$integer($e));
+  $algorithm=hex2bin('300d06092a864886f70d0101010500');
+  $spki=oauthDer(0x30,$algorithm.oauthDer(0x03,"\0".$rsa));
+  return "-----BEGIN PUBLIC KEY-----\n".chunk_split(base64_encode($spki),64,"\n")."-----END PUBLIC KEY-----\n";
+}
+function oauthHttpJson(string $url,?array $post=null,array $headers=[]): array {
+  if(!function_exists('curl_init')) throw new RuntimeException('PHP cURL is required for social sign-in');
+  $ch=curl_init($url); $opts=[CURLOPT_RETURNTRANSFER=>true,CURLOPT_CONNECTTIMEOUT=>8,CURLOPT_TIMEOUT=>18,CURLOPT_HTTPHEADER=>$headers];
+  if($post!==null){$opts[CURLOPT_POST]=true;$opts[CURLOPT_POSTFIELDS]=http_build_query($post,'','&',PHP_QUERY_RFC3986);$opts[CURLOPT_HTTPHEADER]=array_merge(['Content-Type: application/x-www-form-urlencoded'],$headers);}
+  curl_setopt_array($ch,$opts); $body=curl_exec($ch); $code=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE); $err=curl_error($ch); curl_close($ch);
+  if($body===false || $code<200 || $code>=300) throw new RuntimeException('OAuth provider request failed'.($code?' HTTP '.$code:'').($err?': '.$err:''));
+  $data=json_decode((string)$body,true); if(!is_array($data)) throw new RuntimeException('OAuth provider returned invalid JSON'); return $data;
+}
+function oauthVerifyIdToken(string $jwt,string $provider,string $clientId,string $nonce): array {
+  $parts=explode('.',$jwt); if(count($parts)!==3) throw new RuntimeException('Invalid identity token');
+  $head=json_decode((string)oauthB64UrlDecode($parts[0]),true); $claims=json_decode((string)oauthB64UrlDecode($parts[1]),true); $sig=oauthB64UrlDecode($parts[2]);
+  if(!is_array($head)||!is_array($claims)||$sig===false||empty($head['kid'])) throw new RuntimeException('Invalid identity token');
+  if(($head['alg']??'')!=='RS256') throw new RuntimeException('Unexpected identity-token algorithm');
+  $jwksUrl=$provider==='google'?'https://www.googleapis.com/oauth2/v3/certs':'https://appleid.apple.com/auth/keys';
+  $jwks=oauthHttpJson($jwksUrl); $jwk=null;
+  foreach(($jwks['keys']??[]) as $key) if(($key['kid']??'')===$head['kid']){$jwk=$key;break;}
+  if(!$jwk) throw new RuntimeException('Identity-token signing key not found');
+  $public=openssl_pkey_get_public(oauthRsaJwkPem($jwk)); if($public===false || openssl_verify($parts[0].'.'.$parts[1],$sig,$public,OPENSSL_ALGO_SHA256)!==1) throw new RuntimeException('Identity-token signature verification failed');
+  $issuer=$provider==='google'?['accounts.google.com','https://accounts.google.com']:['https://appleid.apple.com'];
+  $aud=$claims['aud']??''; $audOk=is_array($aud)?in_array($clientId,$aud,true):hash_equals($clientId,(string)$aud);
+  if(!in_array((string)($claims['iss']??''),$issuer,true)||!$audOk||empty($claims['sub'])||(int)($claims['exp']??0)<time()||(int)($claims['iat']??0)>time()+120) throw new RuntimeException('Identity-token claims are invalid');
+  $receivedNonce=(string)($claims['nonce']??'');
+  if($receivedNonce==='' || (!hash_equals($nonce,$receivedNonce) && !($provider==='apple' && hash_equals(hash('sha256',$nonce),$receivedNonce)))) throw new RuntimeException('Identity-token nonce mismatch');
+  return $claims;
+}
+function oauthAppleClientSecret(): string {
+  global $config;
+  $header=['alg'=>'ES256','kid'=>(string)$config['apple_key_id']]; $now=time();
+  $payload=['iss'=>(string)$config['apple_team_id'],'iat'=>$now,'exp'=>$now+3600,'aud'=>'https://appleid.apple.com','sub'=>(string)$config['apple_service_id']];
+  $encode=fn($v)=>rtrim(strtr(base64_encode(json_encode($v,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)),'+/','-_'),'=');
+  $input=$encode($header).'.'.$encode($payload); $pem=str_replace('\\n',"\n",(string)$config['apple_private_key']); $key=openssl_pkey_get_private($pem); $der='';
+  if($key===false || !openssl_sign($input,$der,$key,OPENSSL_ALGO_SHA256)) throw new RuntimeException('Apple private key could not sign the client secret');
+  $p=2; if((ord($der[1])&0x80)!==0) $p=2+(ord($der[1])&0x7f); if(ord($der[$p]??"\0")!==0x02) throw new RuntimeException('Invalid ECDSA signature encoding');
+  $rlen=ord($der[$p+1]); $r=substr($der,$p+2,$rlen); $q=$p+2+$rlen; if(ord($der[$q]??"\0")!==0x02) throw new RuntimeException('Invalid ECDSA signature encoding');
+  $slen=ord($der[$q+1]); $s=substr($der,$q+2,$slen); $r=str_pad(substr(ltrim($r,"\0"),-32),32,"\0",STR_PAD_LEFT); $s=str_pad(substr(ltrim($s,"\0"),-32),32,"\0",STR_PAD_LEFT);
+  return $input.'.'.rtrim(strtr(base64_encode($r.$s),'+/','-_'),'=');
+}
+function oauthFindOrCreateUser(string $provider,array $claims,string $name=''): array {
+  $sub=cleanText($claims['sub']??'',255); if($sub==='') throw new RuntimeException('Provider account has no subject identifier');
+  $email=cleanEmail((string)($claims['email']??'')); $verified=in_array($claims['email_verified']??false,[true,1,'1','true'],true);
+  if($email!=='' && (!validEmail($email)||!$verified)) $email='';
+  $users=allUsers(); $foundIndex=null;
+  foreach($users as $i=>$u){
+    if(hash_equals((string)($u['oauth'][$provider]??''),$sub)){$foundIndex=$i;break;}
+    if($email!=='' && cleanEmail((string)($u['email']??''))===$email){
+      if(empty($u['email_verified'])) throw new RuntimeException('ACCOUNT_EXISTS_UNVERIFIED_EMAIL');
+      $foundIndex=$i;break;
+    }
+  }
+  $now=time();
+  if($foundIndex!==null){
+    $u=$users[$foundIndex]; if(($u['status']??'active')!=='active') throw new RuntimeException('This account is disabled');
+    if($email!=='') foreach($users as $i=>$other) if($i!==$foundIndex && cleanEmail((string)($other['email']??''))===$email) throw new RuntimeException('ACCOUNT_EMAIL_CONFLICT');
+    $u['oauth']=is_array($u['oauth']??null)?$u['oauth']:[]; $u['oauth'][$provider]=$sub;
+    if($email!==''){$u['email']=$email;$u['email_verified']=true;} if(trim($name)!=='' && trim((string)($u['name']??''))==='') $u['name']=cleanText($name,160);
+    $u['updated_at']=$now; $users[$foundIndex]=$u;
+  } else {
+    $id=nextId($users); $users[]=['id'=>$id,'email'=>$email,'email_verified'=>$email!=='','phone'=>'','school'=>'','governorate'=>'','grade'=>'الثالث الثانوي — علمي علوم','password'=>password_hash(bin2hex(random_bytes(32)),PASSWORD_DEFAULT),'oauth'=>[$provider=>$sub],'name'=>cleanText($name?:('طالب '.($provider==='google'?'Google':'Apple')),160),'status'=>'active','state'=>'{}','created_at'=>$now,'updated_at'=>$now];
+    $foundIndex=count($users)-1;
+  }
+  writeUsers($users); $user=$users[$foundIndex]; session_regenerate_id(true); $_SESSION['uid']=(int)$user['id']; setRememberCookie(false);
+  return ['id'=>(int)$user['id'],'email'=>$user['email']??'','phone'=>$user['phone']??'','name'=>$user['name']??'','school'=>$user['school']??'','governorate'=>$user['governorate']??'','grade'=>$user['grade']??'الثالث الثانوي — علمي علوم','oauth_providers'=>array_values(array_keys($user['oauth']??[]))];
+}
 function teacherInContent(array $content,string $id): ?array {
   foreach($content['teachers'] as $t) if((string)($t['id']??'')===$id) return $t;
   return null;
@@ -216,11 +319,55 @@ function teacherInContent(array $content,string $id): ?array {
 $action = $_GET['action'] ?? '';
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
+if($action==='oauth_start'){
+  $provider=(string)($_GET['provider']??''); $mode=(string)($_GET['mode']??'login');
+  if(!in_array($provider,['google','apple'],true)||!in_array($mode,['login','signup'],true)) oauthErrorPage('طلب تسجيل الدخول غير صالح.',400);
+  if(!oauthConfigured($provider)) oauthErrorPage('تسجيل '.$provider.' غير مفعّل بعد. على صاحب الموقع إعداد بيانات OAuth في الاستضافة واتباع OAUTH-SETUP-AR.md.');
+  try{
+    $state=bin2hex(random_bytes(32)); $nonce=bin2hex(random_bytes(32));
+    $_SESSION['oauth_state']=$state; $_SESSION['oauth_nonce']=$nonce; $_SESSION['oauth_provider']=$provider; $_SESSION['oauth_mode']=$mode; $_SESSION['oauth_started']=time();
+    $redirect=oauthRedirectUri();
+    if($provider==='google'){
+      $params=['client_id'=>$config['google_client_id'],'redirect_uri'=>$redirect,'response_type'=>'code','scope'=>'openid email profile','state'=>$state,'nonce'=>$nonce,'prompt'=>'select_account'];
+      header('Location: https://accounts.google.com/o/oauth2/v2/auth?'.http_build_query($params,'','&',PHP_QUERY_RFC3986),true,302); exit;
+    }
+    $baseParts=parse_url(oauthBaseUrl()); $appleHost=strtolower((string)($baseParts['host']??''));
+    if(strtolower((string)($baseParts['scheme']??''))!=='https'||$appleHost==='localhost'||filter_var($appleHost,FILTER_VALIDATE_IP)) oauthErrorPage('يتطلب Apple نطاقًا عامًا حقيقيًا يعمل عبر HTTPS.');
+    $params=['client_id'=>$config['apple_service_id'],'redirect_uri'=>$redirect,'response_type'=>'code','response_mode'=>'form_post','scope'=>'name email','state'=>$state,'nonce'=>$nonce];
+    header('Location: https://appleid.apple.com/auth/authorize?'.http_build_query($params,'','&',PHP_QUERY_RFC3986),true,302); exit;
+  }catch(Throwable $e){error_log('[mozakra-oauth] start '.$provider.' '.get_class($e).': '.$e->getMessage());oauthErrorPage('تعذر بدء تسجيل الدخول. تحقق من إعدادات مزود الدخول في الاستضافة.');}
+}
+if($action==='oauth_callback'){
+  $provider=(string)($_SESSION['oauth_provider']??''); $state=(string)($_POST['state']??$_GET['state']??'');
+  $expectedState=(string)($_SESSION['oauth_state']??''); $nonce=(string)($_SESSION['oauth_nonce']??''); $started=(int)($_SESSION['oauth_started']??0);
+  if(!in_array($provider,['google','apple'],true)||$expectedState===''||$state===''||!hash_equals($expectedState,$state)||$started<time()-600||$nonce==='') oauthErrorPage('انتهت جلسة تسجيل الدخول أو لم تطابق. ارجع وابدأ المحاولة من جديد.',400);
+  unset($_SESSION['oauth_state'],$_SESSION['oauth_nonce'],$_SESSION['oauth_provider'],$_SESSION['oauth_mode'],$_SESSION['oauth_started']);
+  if(!empty($_POST['error'])||!empty($_GET['error'])) oauthErrorPage('تم إلغاء تسجيل الدخول أو رفضه. يمكنك الرجوع وتجربة مزود آخر.',400);
+  $code=(string)($_POST['code']??$_GET['code']??''); if($code===''||!oauthConfigured($provider)) oauthErrorPage('لم يكتمل رد مزود تسجيل الدخول.');
+  try{
+    $redirect=oauthRedirectUri();
+    if($provider==='google'){
+      $token=oauthHttpJson('https://oauth2.googleapis.com/token',['code'=>$code,'client_id'=>$config['google_client_id'],'client_secret'=>$config['google_client_secret'],'redirect_uri'=>$redirect,'grant_type'=>'authorization_code']);
+      $claims=oauthVerifyIdToken((string)($token['id_token']??''),'google',(string)$config['google_client_id'],$nonce);
+      if(empty($claims['email'])||!in_array($claims['email_verified']??false,[true,1,'1','true'],true)) throw new RuntimeException('Google did not provide a verified email');
+      $name=cleanText($claims['name']??'',160);
+    }else{
+      $token=oauthHttpJson('https://appleid.apple.com/auth/token',['code'=>$code,'client_id'=>$config['apple_service_id'],'client_secret'=>oauthAppleClientSecret(),'redirect_uri'=>$redirect,'grant_type'=>'authorization_code']);
+      $claims=oauthVerifyIdToken((string)($token['id_token']??''),'apple',(string)$config['apple_service_id'],$nonce);
+      $appleUser=json_decode((string)($_POST['user']??''),true); $name='';
+      if(is_array($appleUser)&&is_array($appleUser['name']??null)) $name=trim((string)($appleUser['name']['firstName']??'').' '.(string)($appleUser['name']['lastName']??''));
+      if($name==='') $name=cleanText($claims['email']??'طالب Apple',160);
+    }
+    oauthFindOrCreateUser($provider,$claims,$name);
+    header('Location: '.oauthBaseUrl().'/study.html',true,303); exit;
+  }catch(Throwable $e){error_log('[mozakra-oauth] callback '.$provider.' '.get_class($e).': '.$e->getMessage());oauthErrorPage('لم نتمكن من التحقق من حسابك أو حفظه. تحقق من إعدادات '.($provider==='google'?'Google':'Apple').' وأن التخزين متصل، ثم حاول مرة أخرى.');}
+}
+
 try {
   if ($action==='me') {
     $u=user();
     if(!$u) out(['ok'=>true,'authenticated'=>false]);
-    out(['ok'=>true,'authenticated'=>true,'user'=>['id'=>(int)$u['id'],'email'=>$u['email']??'','phone'=>$u['phone']??'','name'=>$u['name']??'','school'=>$u['school']??'','governorate'=>$u['governorate']??'','grade'=>$u['grade']??'الثالث الثانوي — علمي علوم']]);
+    out(['ok'=>true,'authenticated'=>true,'user'=>['id'=>(int)$u['id'],'email'=>$u['email']??'','phone'=>$u['phone']??'','name'=>$u['name']??'','school'=>$u['school']??'','governorate'=>$u['governorate']??'','grade'=>$u['grade']??'الثالث الثانوي — علمي علوم','oauth_providers'=>array_values(array_keys($u['oauth']??[]))]]);
   }
   if ($action==='content' && $method==='GET') {
     $c=allContent();
@@ -246,7 +393,7 @@ try {
       if($email!=='' && cleanEmail((string)($u['email']??''))===$email) out(['ok'=>false,'error'=>'EMAIL_EXISTS'],409);
     }
     $id=nextId($users);
-    $users[]=['id'=>$id,'email'=>$email,'phone'=>$phone,'school'=>$school,'governorate'=>$governorate,'grade'=>$grade,'password'=>password_hash($pass,PASSWORD_DEFAULT),'name'=>$name,'status'=>'active','state'=>'{}','created_at'=>$now,'updated_at'=>$now];
+    $users[]=['id'=>$id,'email'=>$email,'email_verified'=>false,'phone'=>$phone,'school'=>$school,'governorate'=>$governorate,'grade'=>$grade,'password'=>password_hash($pass,PASSWORD_DEFAULT),'name'=>$name,'status'=>'active','state'=>'{}','created_at'=>$now,'updated_at'=>$now];
     writeUsers($users); session_regenerate_id(true); $_SESSION['uid']=$id; setRememberCookie(false);
     out(['ok'=>true,'authenticated'=>true,'user'=>['id'=>$id,'email'=>$email,'phone'=>$phone,'name'=>$name,'school'=>$school,'governorate'=>$governorate,'grade'=>$grade]]);
   }
@@ -264,25 +411,26 @@ try {
   if ($action==='logout' && $method==='POST') { $_SESSION['uid']=null; setcookie(session_name(),'', ['expires'=>time()-3600,'httponly'=>true,'samesite'=>'Lax','secure'=>$https,'path'=>'/']); session_destroy(); out(['ok'=>true]); }
   if ($action==='profile' && $method==='GET') {
     $u=requireUser();
-    out(['ok'=>true,'profile'=>['id'=>(int)$u['id'],'name'=>$u['name']??'','phone'=>$u['phone']??'','email'=>$u['email']??'','school'=>$u['school']??'','governorate'=>$u['governorate']??'','grade'=>$u['grade']??'الثالث الثانوي — علمي علوم']]);
+    out(['ok'=>true,'profile'=>['id'=>(int)$u['id'],'name'=>$u['name']??'','phone'=>$u['phone']??'','email'=>$u['email']??'','school'=>$u['school']??'','governorate'=>$u['governorate']??'','grade'=>$u['grade']??'الثالث الثانوي — علمي علوم','oauth_providers'=>array_values(array_keys($u['oauth']??[]))]]);
   }
   if ($action==='profile' && $method==='POST') {
     $u=requireUser(); $d=input();
     $name=cleanText($d['name']??$u['name']??'',160); $phone=cleanPhone((string)($d['phone']??$u['phone']??''));
     $email=cleanEmail((string)($d['email']??$u['email']??'')); $school=cleanText($d['school']??$u['school']??'',180); $gov=cleanText($d['governorate']??$u['governorate']??'',80);
     if($name==='') out(['ok'=>false,'error'=>'NAME_REQUIRED'],422);
-    if(!validPhone($phone)) out(['ok'=>false,'error'=>'INVALID_PHONE'],422);
+    $socialAccount=($phone==='' && !empty($u['oauth']) && is_array($u['oauth']));
+    if(($phone==='' && !$socialAccount)||($phone!=='' && !validPhone($phone))) out(['ok'=>false,'error'=>'INVALID_PHONE'],422);
     if($email!=='' && !validEmail($email)) out(['ok'=>false,'error'=>'INVALID_EMAIL'],422);
     $users=allUsers();
     foreach($users as $x){
       if((int)($x['id']??0)===(int)$u['id']) continue;
-      if(cleanPhone((string)($x['phone']??''))===$phone) out(['ok'=>false,'error'=>'PHONE_EXISTS'],409);
+      if($phone!=='' && cleanPhone((string)($x['phone']??''))===$phone) out(['ok'=>false,'error'=>'PHONE_EXISTS'],409);
       if($email!=='' && cleanEmail((string)($x['email']??''))===$email) out(['ok'=>false,'error'=>'EMAIL_EXISTS'],409);
     }
     $updated=null; $now=time();
-    foreach($users as &$x) if((int)$x['id']===(int)$u['id']){ $x['name']=$name; $x['phone']=$phone; $x['email']=$email; $x['school']=$school; $x['governorate']=$gov; $x['updated_at']=$now; $updated=$x; break; } unset($x);
+    foreach($users as &$x) if((int)$x['id']===(int)$u['id']){ if(cleanEmail((string)($x['email']??''))!==$email) $x['email_verified']=false; $x['name']=$name; $x['phone']=$phone; $x['email']=$email; $x['school']=$school; $x['governorate']=$gov; $x['updated_at']=$now; $updated=$x; break; } unset($x);
     if(!$updated) out(['ok'=>false,'error'=>'USER_NOT_FOUND'],404); writeUsers($users);
-    out(['ok'=>true,'user'=>['id'=>(int)$updated['id'],'email'=>$updated['email']??'','phone'=>$updated['phone']??'','name'=>$updated['name']??'','school'=>$updated['school']??'','governorate'=>$updated['governorate']??'','grade'=>$updated['grade']??'الثالث الثانوي — علمي علوم']]);
+    out(['ok'=>true,'user'=>['id'=>(int)$updated['id'],'email'=>$updated['email']??'','phone'=>$updated['phone']??'','name'=>$updated['name']??'','school'=>$updated['school']??'','governorate'=>$updated['governorate']??'','grade'=>$updated['grade']??'الثالث الثانوي — علمي علوم','oauth_providers'=>array_values(array_keys($updated['oauth']??[]))]]);
   }
   if ($action==='state' && $method==='GET') {
     $u=requireUser(); $state=json_decode((string)($u['state'] ?? '{}'),true); if(!is_array($state)) $state=[];

@@ -21,3 +21,11 @@
 
 بيانات الطلاب والمحتوى والدعم تخزن في ملفات JSON. نسخة Blob خاصة، وليست قاعدة بيانات علائقية. لا تضع أي مفاتيح أو أكواد سرية في ملفات الواجهة أو Git أو ملف ZIP.
 راجع BLOB-SETUP-AR.md وvercel-blob-bridge/README.md لمزيد من التفاصيل.
+
+
+تسجيل Google وApple:
+- التدفق البرمجي موجود في api/oauth.php ويتطلب إعداد OAuth من لوحتي المطورين.
+- اضبط OAUTH_BASE_URL على عنوان HTTPS للموقع، وسجّل https://اسم-النطاق/api/oauth.php كعنوان رجوع لدى كل مزود.
+- Google: GOOGLE_CLIENT_ID وGOOGLE_CLIENT_SECRET.
+- Apple: APPLE_SERVICE_ID وAPPLE_TEAM_ID وAPPLE_KEY_ID وAPPLE_PRIVATE_KEY.
+- اتبع OAUTH-SETUP-AR.md للتعليمات التفصيلية؛ لا تضع مفاتيح المزودين داخل ZIP أو ملفات الواجهة.

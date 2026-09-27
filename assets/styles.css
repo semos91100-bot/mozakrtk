@@ -292,3 +292,25 @@ body{background:#fff}
 .auth-remember{color:#41536a}.auth-link{color:#2568c4}.auth-link:hover{color:#174b91}
 .auth-note{border-color:#dbe8f4;background:linear-gradient(110deg,#eff6ff,#effaf8);color:#223b58}.auth-note small{color:#627891}
 .auth-terms{color:#75859a}
+
+/* Polished light OAuth/account experience. */
+.auth-box.auth-shell{max-width:488px;border-radius:28px}
+.auth-hero{min-height:205px;padding:24px 26px 20px}
+.auth-mascot{width:70px;height:70px}
+.auth-panel{padding:20px 28px 22px}
+.auth-social{grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin:0 0 13px}
+.auth-social-btn{min-height:48px;border-radius:13px;background:#fff;color:#253650;border-color:#dce4ed;text-decoration:none;font-weight:600}
+.auth-social-btn:hover{background:#f8fbff;border-color:#b8cce5;box-shadow:0 5px 14px rgba(20,50,90,.07)}
+.auth-social-btn:focus-visible,.auth-tab:focus-visible,.auth-submit:focus-visible,.auth-link:focus-visible{outline:3px solid rgba(36,104,216,.38);outline-offset:2px}
+.google-oauth .social-google{font-size:20px}
+.apple-oauth{background:#111!important;color:#fff!important;border-color:#111!important}
+.apple-oauth:hover{background:#282828!important;border-color:#282828!important}
+.social-apple{width:20px;height:20px;flex:0 0 20px}
+.auth-divider{display:flex;align-items:center;gap:12px;margin:0 0 16px;color:#7b8ba0;font-size:.71rem}
+.auth-divider::before,.auth-divider::after{height:1px;flex:1;content:"";background:#e5ebf2}
+.auth-error{border-color:#f3c2c2;background:#fff3f3;color:#a52e38}
+.auth-hero{background:radial-gradient(ellipse at 50% 100%,rgba(36,104,216,.13),transparent 45%),linear-gradient(150deg,#fff,#f7faff 64%,#f2fbf8)}
+.auth-hero::before{opacity:.2}
+.auth-hero h1{color:#172a42;text-shadow:none}
+.auth-hero p{color:#687b93}.auth-hero .auth-kicker{color:#168e83}
+@media(max-width:520px){.auth-box.auth-shell{border-radius:24px 24px 0 0}.auth-hero{min-height:184px}.auth-panel{padding-inline:21px}.auth-social-btn{min-height:46px}}
