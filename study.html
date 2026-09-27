@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="assets/styles.css">
 </head>
 <body>
+<a class="skip-link" href="#view">انتقل للمحتوى</a>
 <div class="app">
   <aside class="rail">
     <div class="brand">
@@ -25,11 +26,11 @@
         <span>🔎</span>
         <input id="q" type="search" placeholder="دوّر على درس، قانون، سؤال، مدرّس…" autocomplete="off">
       </div>
-      <button class="iconbtn" id="btnTimer" title="مؤقت المذاكرة">⏱️</button>
-      <button class="iconbtn" id="btnBell" title="الإشعارات">🔔<span class="dot" id="bellDot" hidden></span></button>
+      <button class="iconbtn" id="btnTimer" title="مؤقت المذاكرة" aria-label="فتح مؤقت المذاكرة">⏱️</button>
+      <button class="iconbtn" id="btnBell" title="الإشعارات" aria-label="فتح الإشعارات">🔔<span class="dot" id="bellDot" hidden></span></button>
       <a class="iconbtn" href="index.html" title="عن مُذاكرتك" aria-label="العودة إلى الصفحة التعريفية">ℹ️</a>
     </header>
-    <main class="view" id="view"></main>
+    <main class="view" id="view" tabindex="-1"></main>
   </div>
 </div>
 <nav class="tabbar" id="tabbar"></nav>

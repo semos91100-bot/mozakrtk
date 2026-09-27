@@ -30,7 +30,7 @@ function saveLocal(){
   try{ localStorage.setItem(LS,JSON.stringify(S)); }catch(e){}
   cloudPush();
 }
-function apiUrl(action){ return `/api/backend?action=${encodeURIComponent(action)}`; }
+function apiUrl(action){ return `api/api.php?action=${encodeURIComponent(action)}`; }
 async function apiJSON(action,opts={}){
   let r;
   try{r=await fetch(apiUrl(action),{credentials:"same-origin",headers:{"Content-Type":"application/json",...(opts.headers||{})},...opts});}
@@ -77,20 +77,6 @@ async function logoutAccount(){
 }
 function authMessage(code){
   return ({
-    BAD_NAME:"اكتب اسم الطالب بشكل صحيح.",
-    BAD_PHONE:"رقم الموبايل المصري غير صحيح.",
-    BAD_EMAIL:"اكتب بريدًا إلكترونيًا صحيحًا أو اتركه فارغًا.",
-    BAD_PASSWORD:"كلمة المرور يجب ألا تقل عن 6 أحرف.",
-    INVALID_CREDENTIALS:"رقم الموبايل/البريد أو كلمة المرور غير صحيحة.",
-    MISSING_FIELDS:"أكمل رقم الموبايل وكلمة المرور.",
-    DUPLICATE:"رقم الموبايل أو البريد الإلكتروني مستخدم بالفعل.",
-    CONFIG_MISSING:"إعداد الخادم غير مكتمل. أبلغ صاحب الموقع ليتحقق من إعدادات Vercel.",
-    DB_ERROR:"تعذر الوصول إلى قاعدة البيانات. أبلغ صاحب الموقع.",
-    DB_UNREACHABLE:"تعذر الاتصال بقاعدة البيانات. أبلغ صاحب الموقع.",
-    DB_AUTH:"مفتاح قاعدة البيانات غير صحيح. أبلغ صاحب الموقع.",
-    SCHEMA_MISSING:"قاعدة البيانات تحتاج تحديثًا. أبلغ صاحب الموقع لتشغيل ملف SUPABASE.sql.",
-    OAUTH_NOT_CONFIGURED:"تسجيل الدخول بهذا المزود لم يُفعّل بعد. يلزم ضبط مفاتيحه في Vercel.",
-    OAUTH_EMAIL_EXISTS:"هذا البريد مرتبط بحساب موجود. سجّل الدخول بالحساب الحالي لتجنب إنشاء حساب مكرر.",
     EMAIL_EXISTS:"الإيميل ده مسجل بالفعل.",
     PHONE_EXISTS:"رقم الموبايل ده مسجل بالفعل.",
     LOGIN_FAILED:"رقم الموبايل/الإيميل أو كلمة المرور غير صحيحة.",
@@ -281,6 +267,6 @@ const TABS=[{h:"#/dash",i:"🏠",t:"الرئيسية"},{h:"#/schedule",i:"📅",
 function paintNav(){
   const cur=location.hash||"#/dash";
   $("#nav").innerHTML=NAV.map(n=>n.sep?'<div class="sep"></div>':
-    `<a href="${n.h}" class="${cur.startsWith(n.h)?"on":""}"><i>${n.i}</i>${n.t}</a>`).join("");
-  $("#tabbar").innerHTML=TABS.map(n=>`<a href="${n.h}" class="${cur.startsWith(n.h)?"on":""}"><i>${n.i}</i>${n.t}</a>`).join("");
+    `<a href="${n.h}" class="${cur.startsWith(n.h)?"on":""}"><i aria-hidden="true">${n.i}</i>${n.t}</a>`).join("");
+  $("#tabbar").innerHTML=TABS.map(n=>`<a href="${n.h}" class="${cur.startsWith(n.h)?"on":""}"><i aria-hidden="true">${n.i}</i>${n.t}</a>`).join("");
 }
